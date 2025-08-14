@@ -1,4 +1,4 @@
-[![Version](https://img.shields.io/github/v/release/HCL-CDP-TA/demo-banking)](https://github.com/HCL-CDP-TA/demo-banking/releases)
+[![Version](https://img.shields.io/github/v/release/HCL-CDP-TA/interact-web-sdk)](https://github.com/HCL-CDP-TA/interact-web-sdk/releases)
 
 # HCL Interact Web SDK
 
