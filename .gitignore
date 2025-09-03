@@ -8,7 +8,7 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Build outputs (keep for distribution)
-# dist/
+dist/ 
 
 # Temp build files
 *.tsbuildinfo

@@ -2,13 +2,34 @@
 
 Framework-agnostic TypeScript SDK for HCL Interact with comprehensive session management, offer retrieval, and event tracking.
 
-## Installation & Usage
+## Quick Start
 
-### With NPM (Recommended)
+The SDK can be used in any JavaScript environment:
+
+### Option 1: NPM Installation (Recommended)
 
 ```bash
 npm install @hcl-cdp-ta/interact-sdk
 ```
+
+### Option 2: Direct Browser Usage (No Dependencies)
+
+Load directly from GitHub (or use your preferred CDN):
+
+```html
+<!-- Load from GitHub -->
+<script src="https://raw.githubusercontent.com/HCL-CDP-TA/interact-web-sdk/main/dist/index.global.js"></script>
+
+<!-- Or specific version -->
+<script src="https://raw.githubusercontent.com/HCL-CDP-TA/interact-web-sdk/v1.0.0/dist/index.global.js"></script>
+
+<!-- Or from CDN (when published) -->
+<script src="https://unpkg.com/@hcl-cdp-ta/interact-sdk/dist/index.global.js"></script>
+```
+
+## Installation & Usage
+
+### With NPM
 
 ```javascript
 // ES modules
@@ -81,8 +102,13 @@ For maximum compatibility, you can use the IIFE (Immediately Invoked Function Ex
 <html>
   <head>
     <title>HCL Interact SDK Demo</title>
-    <!-- Load the IIFE bundle -->
+    <!-- Load the IIFE bundle from GitHub (or other sources) -->
+    <script src="https://raw.githubusercontent.com/HCL-CDP-TA/interact-web-sdk/main/dist/index.global.js"></script>
+    <!-- Alternative loading options:
+    <script src="https://raw.githubusercontent.com/HCL-CDP-TA/interact-web-sdk/v1.0.0/dist/index.global.js"></script>
+    <script src="https://unpkg.com/@hcl-cdp-ta/interact-sdk/dist/index.global.js"></script>
     <script src="./node_modules/@hcl-cdp-ta/interact-sdk/dist/index.global.js"></script>
+    -->
   </head>
   <body>
     <script>
