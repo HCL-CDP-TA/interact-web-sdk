@@ -1,1 +1,585 @@
-var b=Object.defineProperty;var p=Object.getOwnPropertySymbols;var h=Object.prototype.hasOwnProperty,P=Object.prototype.propertyIsEnumerable;var l=(o,e,t)=>e in o?b(o,e,{enumerable:!0,configurable:!0,writable:!0,value:t}):o[e]=t,u=(o,e)=>{for(var t in e||(e={}))h.call(e,t)&&l(o,t,e[t]);if(p)for(var t of p(e))P.call(e,t)&&l(o,t,e[t]);return o};var g=class extends Error{constructor(t,r,s){super(s||`API Error: ${t} ${r}`);this.status=t;this.statusText=r;this.name="InteractApiError"}},c=class{constructor(e={}){this.baseUrl=e.baseUrl||"https://unica.prod.hxun.aws.now.hclsoftware.cloud/interact/v2",this.defaultHeaders=u({"Content-Type":"application/json"},e.defaultHeaders),e.username&&(this.defaultHeaders.m_user_name=e.username),e.password&&(this.defaultHeaders.m_user_password=e.password)}async request(e,t,r={}){let s=new URL(t,this.baseUrl);r.params&&Object.entries(r.params).forEach(([d,O])=>{O!=null&&s.searchParams.append(d,String(O))});let n=u(u({},this.defaultHeaders),r.headers),i={method:e,headers:n};r.body&&e!=="GET"&&(i.body=JSON.stringify(r.body));let a=await fetch(s.toString(),i);if(!a.ok)throw new g(a.status,a.statusText);let m=a.headers.get("content-type");return m!=null&&m.includes("application/json")?a.json():a.text()}async startSession(e,t,r,s,n,i=!0){return this.request("POST",`/sessions/${e}`,{params:{ic:t,audienceLevel:r,audienceIDField:s,escapeHtml:i},body:n})}async endSession(e,t,r=!0){return this.request("DELETE",`/sessions/${e}`,{params:{parameters:t,escapeHtml:r}})}async setAudience(e,t,r,s,n=!0){return this.request("PUT",`/audiences/${e}`,{params:{audienceLevel:t,audienceIDField:r,escapeHtml:n},body:s})}async getOffers(e,t,r,s,n=!0){return this.request("GET",`/offers/${e}/${t}`,{params:{number:r,parameters:s,escapeHtml:n}})}async getOffersForMultipleIPs(e,t,r,s=!0){return this.request("POST",`/offers/${e}`,{params:{parameters:r,escapeHtml:s},body:t})}async postEvent(e,t,r,s=!0){return this.request("POST",`/events/${e}/${t}`,{params:{escapeHtml:s},body:r})}async getProfile(e,t,r=!0){return this.request("GET",`/profiles/${e}`,{params:{parameters:t,escapeHtml:r}})}async batchExecute(e,t,r=!0){return this.request("POST",`/batch/${e}`,{params:{escapeHtml:r},body:t})}async executeCompleteInteraction(e,t,r,s,n,i=1,a={}){let m={startSession:{ic:t,audienceLevel:r,audienceID:s,debug:a.debug,relyOnExistingSession:a.relyOnExistingSession,parameters:a.sessionParameters},getOffers:{interactionPointID:n,numberRequested:i,parameters:a.offerParameters},endSession:{}};return this.batchExecute(e,m)}async executeInteractionWithEvent(e,t,r,s,n,i,a=1,m={}){let d={startSession:{ic:t,audienceLevel:r,audienceID:s,debug:m.debug,parameters:m.sessionParameters},postEvent:{event:n,parameters:m.eventParameters},getOffers:{interactionPointID:i,numberRequested:a,parameters:m.offerParameters},endSession:{}};return this.batchExecute(e,d)}async executeMultiTouchpointInteraction(e,t,r,s,n,i={}){let a={startSession:{ic:t,audienceLevel:r,audienceID:s,debug:i.debug,parameters:i.sessionParameters},getOffersForMultipleInteractionPoints:{getOfferRequests:n,parameters:i.offerParameters},endSession:{}};return this.batchExecute(e,a)}async executeProfileBasedInteraction(e,t,r,s,n,i=1,a={}){let m={startSession:{ic:t,audienceLevel:r,audienceID:s,debug:a.debug,parameters:a.sessionParameters},getProfile:{},getOffers:{interactionPointID:n,numberRequested:i,parameters:a.offerParameters},endSession:{}};return this.batchExecute(e,m)}createBatchBuilder(e){return new f(this,e)}async getStatus(){return this.request("GET","/status")}async getResourceConsumption(){return this.request("GET","/resources")}async getActiveDeployments(){return this.request("GET","/deployments")}async getDeploymentByIcId(e){return this.request("GET",`/deployments/channels/${e}`)}async getDataSources(){return this.request("GET","/datasources")}async testDataSourceConnection(e){return this.request("GET","/datasources/status",{params:{datasourceName:e}})}async getGDPRSQLScripts(e,t,r,s){return this.request("POST","/gdpr",{params:{QuerySeparator:t,NLSPrefix:r,returnZip:s},body:e})}async syncConsent(){return this.request("POST","/consent/sync")}static createParameter(e,t,r){return{n:e,t,v:r}}static createParameters(e){return e.map(t=>this.createParameter(t.name,t.type,t.value))}};function x(o){return new c(o)}var f=class{constructor(e,t){this.client=e;this.sessionId=t;this.batchCommand={}}startSession(e,t,r,s={}){return this.batchCommand.startSession=u({ic:e,audienceLevel:t,audienceID:r},s),this}getOffers(e,t=1,r){return this.batchCommand.getOffers={interactionPointID:e,numberRequested:t,parameters:r},this}getOffersMultiple(e,t){return this.batchCommand.getOffersForMultipleInteractionPoints={getOfferRequests:e,parameters:t},this}postEvent(e,t){return this.batchCommand.postEvent={event:e,parameters:t},this}setAudience(e,t,r){return this.batchCommand.setAudience={audienceLevel:e,audienceID:t,parameters:r},this}getProfile(){return this.batchCommand.getProfile={},this}endSession(){return this.batchCommand.endSession={},this}setDebug(e){return this.batchCommand.setDebug={debug:e},this}getVersion(){return this.batchCommand.getVersion=!0,this}async execute(){return this.client.batchExecute(this.sessionId,this.batchCommand)}build(){return u({},this.batchCommand)}},R=c;export{f as BatchBuilder,c as InteractApiClient,g as InteractApiError,x as createInteractClient,R as default};
+// src/InteractClient.ts
+var InteractClient = class {
+  config;
+  tokenId = null;
+  sessionState = {
+    sessionId: null,
+    isValid: false,
+    lastActivity: /* @__PURE__ */ new Date()
+  };
+  constructor(config) {
+    this.config = {
+      ...config,
+      interactiveChannel: config.interactiveChannel || "_RealTimePersonalization_"
+    };
+  }
+  // Helper to convert AudienceConfig to NameValuePair array
+  convertAudienceToArray(audience) {
+    return [
+      {
+        n: audience.audienceId.name,
+        v: audience.audienceId.value,
+        t: audience.audienceId.type
+      }
+    ];
+  }
+  // Public helper for users who need to create audience arrays manually
+  static convertAudienceToArray(audience) {
+    return [
+      {
+        n: audience.audienceId.name,
+        v: audience.audienceId.value,
+        t: audience.audienceId.type
+      }
+    ];
+  }
+  // Session management methods
+  getSessionId() {
+    return this.sessionState.sessionId;
+  }
+  setSessionId(sessionId) {
+    this.sessionState.sessionId = sessionId;
+    this.sessionState.isValid = !!sessionId;
+    this.sessionState.lastActivity = /* @__PURE__ */ new Date();
+  }
+  isSessionValid() {
+    return this.sessionState.isValid && !!this.sessionState.sessionId;
+  }
+  clearSession() {
+    this.sessionState = {
+      sessionId: null,
+      isValid: false,
+      lastActivity: /* @__PURE__ */ new Date()
+    };
+  }
+  // Helper methods for default audience configurations
+  static createVisitorAudience(visitorId = "0") {
+    return {
+      audienceLevel: "Visitor",
+      audienceId: {
+        name: "VisitorID",
+        value: visitorId,
+        type: "string"
+      }
+    };
+  }
+  static createCustomerAudience(customerId) {
+    return {
+      audienceLevel: "Customer",
+      audienceId: {
+        name: "CustomerID",
+        value: customerId,
+        type: "numeric"
+      }
+    };
+  }
+  // Check if response indicates session is invalid
+  isSessionInvalid(response) {
+    return response.responses?.some(
+      (r) => r.statusCode === 2 && r.messages?.some((m) => m.msgLevel === 2 && m.msg.toLowerCase().includes("invalid session id"))
+    ) || false;
+  }
+  // Execute batch with automatic session retry
+  async executeBatchWithRetry(sessionId, commands, audience, maxRetries = 1) {
+    let currentSessionId = sessionId || this.sessionState.sessionId;
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      try {
+        const response = await this.executeBatch(currentSessionId, commands);
+        if (response.responses?.[0]?.sessionId) {
+          this.setSessionId(response.responses[0].sessionId);
+        }
+        if (this.isSessionInvalid(response) && attempt < maxRetries) {
+          if (this.config.enableLogging) {
+            console.warn("Session invalid, retrying with new session...");
+          }
+          this.clearSession();
+          if (audience) {
+            const newSessionResponse = await this.startSessionLowLevel(
+              null,
+              this.convertAudienceToArray(audience),
+              audience.audienceLevel
+            );
+            if (newSessionResponse.sessionId) {
+              currentSessionId = newSessionResponse.sessionId;
+              this.setSessionId(currentSessionId);
+              attempt++;
+              continue;
+            }
+          }
+          throw new Error("Failed to establish new session after invalid session");
+        }
+        return response;
+      } catch (error) {
+        if (attempt >= maxRetries) {
+          throw error;
+        }
+        attempt++;
+      }
+    }
+    throw new Error("Max retries exceeded");
+  }
+  // Core batch execution - the main method for all API calls
+  async executeBatch(sessionId, commands) {
+    const url = `${this.config.serverUrl}/servlet/RestServlet`;
+    const headers = {
+      "Content-Type": "application/json; charset=utf-8"
+    };
+    if (this.tokenId) {
+      headers["m_tokenId"] = this.tokenId;
+    } else if (this.config.username) {
+      headers["m_user_name"] = encodeURIComponent(this.config.username);
+      headers["m_user_password"] = encodeURIComponent(this.config.password || "");
+    }
+    const requestBody = {
+      commands
+    };
+    if (sessionId !== null) {
+      requestBody.sessionId = sessionId;
+    }
+    const requestBodyString = JSON.stringify(requestBody);
+    if (this.config.enableLogging) {
+      console.log("Interact Request:", requestBodyString);
+    }
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: requestBodyString
+      });
+      const responseTokenId = response.headers.get("m_tokenId");
+      if (responseTokenId) {
+        this.tokenId = responseTokenId;
+      }
+      const responseData = await response.json();
+      if (response.status === 200) {
+        if (this.config.enableLogging) {
+          console.log("Interact Response:", responseData);
+        }
+        return responseData;
+      } else {
+        throw new Error(`Interact API error: ${response.status}`);
+      }
+    } catch (error) {
+      if (this.config.enableLogging) {
+        console.error("Interact API error:", error);
+      }
+      throw error;
+    }
+  }
+  // Convenience methods for common operations
+  // Low-level session start with full control
+  async startSessionLowLevel(sessionId, audienceID, audienceLevel, parameters, relyOnExistingSession = true, debug = false) {
+    const commands = [
+      {
+        action: "startSession",
+        ic: this.config.interactiveChannel,
+        audienceID,
+        audienceLevel,
+        parameters,
+        relyOnExistingSession,
+        debug
+      }
+    ];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  // Main session start method with audience config and optional sessionId
+  async startSession(audience, sessionId) {
+    const audienceIdArray = this.convertAudienceToArray(audience);
+    const response = await this.startSessionLowLevel(sessionId ?? null, audienceIdArray, audience.audienceLevel);
+    if (response.sessionId) {
+      this.setSessionId(response.sessionId);
+    }
+    return response;
+  }
+  async getOffers(sessionId, interactionPoint, numberRequested = 1) {
+    const commands = [
+      {
+        action: "getOffers",
+        ip: interactionPoint,
+        numberRequested
+      }
+    ];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  // Implementation handles both signatures
+  async postEvent(sessionIdOrEventName, eventNameOrParameters, parametersOrOptions) {
+    if (typeof eventNameOrParameters === "string") {
+      const sessionId = sessionIdOrEventName;
+      const eventName = eventNameOrParameters;
+      const parameters = parametersOrOptions;
+      const commands = [
+        {
+          action: "postEvent",
+          event: eventName,
+          parameters
+        }
+      ];
+      const batchResponse = await this.executeBatch(sessionId, commands);
+      return this.extractFirstResponse(batchResponse);
+    } else {
+      const eventName = sessionIdOrEventName;
+      const parameters = eventNameOrParameters;
+      const options = parametersOrOptions;
+      const { sessionId: explicitSessionId, autoManageSession = false, audience } = options || {};
+      let sessionId = explicitSessionId;
+      if (!sessionId) {
+        if (autoManageSession) {
+          sessionId = this.getSessionId() || void 0;
+          if (!sessionId && audience) {
+            const sessionResponse = await this.startSession(audience);
+            sessionId = sessionResponse.sessionId || void 0;
+          }
+          if (!sessionId) {
+            throw new Error("No session available and no audience provided to start new session");
+          }
+          const commands2 = [
+            {
+              action: "postEvent",
+              event: eventName,
+              parameters
+            }
+          ];
+          const batchResponse2 = await this.executeBatchWithRetry(sessionId, commands2, audience);
+          return this.extractFirstResponse(batchResponse2);
+        } else {
+          throw new Error("No sessionId provided and autoManageSession not enabled");
+        }
+      }
+      const commands = [
+        {
+          action: "postEvent",
+          event: eventName,
+          parameters
+        }
+      ];
+      const batchResponse = await this.executeBatch(sessionId, commands);
+      return this.extractFirstResponse(batchResponse);
+    }
+  }
+  async getVersion() {
+    const commands = [
+      {
+        action: "getVersion"
+      }
+    ];
+    const batchResponse = await this.executeBatch(null, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  async endSession(sessionId) {
+    const commands = [
+      {
+        action: "endSession"
+      }
+    ];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  async setAudience(sessionId, audienceID, audienceLevel) {
+    const commands = [
+      {
+        action: "setAudience",
+        audienceID,
+        audienceLevel
+      }
+    ];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    const response = this.extractFirstResponse(batchResponse);
+    if (response.sessionId) {
+      this.setSessionId(response.sessionId);
+    }
+    return response;
+  }
+  async setAudienceFromConfig(sessionId, audience, audienceLevel) {
+    const audienceIdArray = this.convertAudienceToArray(audience);
+    return this.setAudience(sessionId, audienceIdArray, audienceLevel);
+  }
+  // Batch builder for complex workflows
+  createBatch() {
+    return new BatchBuilder(this);
+  }
+  // Enhanced convenience methods with automatic session management
+  async getOffersWithSession(interactionPoint, numberRequested = 1, audience) {
+    let sessionId = this.getSessionId();
+    if (!sessionId && audience) {
+      const sessionResponse = await this.startSession(audience);
+      sessionId = sessionResponse.sessionId || null;
+    }
+    if (!sessionId) {
+      throw new Error("No session available and no audience provided to start new session");
+    }
+    const commands = [
+      {
+        action: "getOffers",
+        ip: interactionPoint,
+        numberRequested
+      }
+    ];
+    const batchResponse = await this.executeBatchWithRetry(sessionId, commands, audience);
+    return this.extractFirstResponse(batchResponse);
+  }
+  // Backward compatibility wrapper for postEventWithSession
+  async postEventWithSession(eventName, parameters, audience) {
+    return this.postEvent(eventName, parameters, { autoManageSession: true, audience });
+  }
+  // Complete workflow methods
+  async getOffersForPage(interactionPoint, audience, numberRequested = 1, trackPageView = true) {
+    const batch = this.createBatch();
+    const audienceIdArray = this.convertAudienceToArray(audience);
+    batch.startSession(audienceIdArray, audience.audienceLevel);
+    if (trackPageView) {
+      batch.postEvent("page_view");
+    }
+    batch.getOffers(interactionPoint, numberRequested);
+    const results = await batch.execute(null);
+    const sessionId = results.responses?.[0]?.sessionId;
+    if (sessionId) {
+      this.setSessionId(sessionId);
+    }
+    const offersResponse = results.responses?.find((r) => r.offerLists && r.offerLists.length > 0);
+    const offers = offersResponse?.offerLists?.[0]?.offers || [];
+    return {
+      offers,
+      sessionId: sessionId || this.getSessionId() || ""
+    };
+  }
+  // Helper methods
+  static createParameter(name, value, type = "string") {
+    return { n: name, v: value, t: type };
+  }
+  extractFirstResponse(batchResponse) {
+    if (batchResponse.responses && batchResponse.responses.length >= 1) {
+      return batchResponse.responses[0];
+    }
+    throw new Error("No response in batch");
+  }
+};
+var BatchBuilder = class {
+  client;
+  commands = [];
+  constructor(client) {
+    this.client = client;
+  }
+  startSession(audienceID, audienceLevel, parameters, relyOnExistingSession = true, debug = false) {
+    this.commands.push({
+      action: "startSession",
+      ic: this.client["config"].interactiveChannel,
+      audienceID,
+      audienceLevel,
+      parameters,
+      relyOnExistingSession,
+      debug
+    });
+    return this;
+  }
+  getOffers(interactionPoint, numberRequested = 1) {
+    this.commands.push({
+      action: "getOffers",
+      ip: interactionPoint,
+      numberRequested
+    });
+    return this;
+  }
+  postEvent(eventName, parameters) {
+    this.commands.push({
+      action: "postEvent",
+      event: eventName,
+      parameters
+    });
+    return this;
+  }
+  endSession() {
+    this.commands.push({
+      action: "endSession"
+    });
+    return this;
+  }
+  setAudience(audienceID, audienceLevel) {
+    this.commands.push({
+      action: "setAudience",
+      audienceID,
+      audienceLevel
+    });
+    return this;
+  }
+  async execute(sessionId) {
+    const result = await this.client.executeBatch(sessionId, this.commands);
+    this.commands = [];
+    return result;
+  }
+};
+
+// src/InteractError.ts
+var InteractApiError = class extends Error {
+  constructor(status, statusText, message) {
+    super(message || `API Error: ${status} ${statusText}`);
+    this.status = status;
+    this.statusText = statusText;
+    this.name = "InteractApiError";
+  }
+};
+
+// src/InteractServletClient.ts
+var InteractServletClient = class {
+  config;
+  constructor(config) {
+    this.config = config;
+  }
+  // Core execute command method that mimics the original interactapi.js
+  async executeCmd(requestBody) {
+    const url = this.config.url + "/servlet/RestServlet";
+    const headers = {
+      "Content-type": "application/json; charset=utf-8"
+    };
+    const tokenId = this.getTokenFromCookie("m_tokenId");
+    if (tokenId) {
+      headers["m_tokenId"] = tokenId;
+    } else if (this.config.m_user_name) {
+      headers["m_user_name"] = encodeURIComponent(this.config.m_user_name);
+      headers["m_user_password"] = encodeURIComponent(this.config.m_user_password || "");
+    }
+    if (this.config.enableLog === "true") {
+      console.log("Executing commands: " + requestBody);
+    }
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: requestBody
+      });
+      const responseTokenId = response.headers.get("m_tokenId");
+      if (responseTokenId) {
+        this.setTokenCookie("m_tokenId", responseTokenId, requestBody.indexOf("endSession") > -1);
+      }
+      let responseData;
+      const responseText = await response.text();
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (e) {
+        responseData = responseText;
+      }
+      if (response.status === 200) {
+        if (this.config.enableLog === "true") {
+          console.log("Response: " + responseText);
+        }
+        return responseData;
+      } else {
+        if (this.config.enableLog === "true") {
+          console.error("Response: " + responseText);
+        }
+        throw new InteractApiError(response.status, response.statusText, `Request failed: ${response.status}`);
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+  // Execute batch commands - this is the main method matching the original API
+  async executeBatch(sessionId, commands) {
+    const requestBody = JSON.stringify({
+      sessionId,
+      commands
+    });
+    return this.executeCmd(requestBody);
+  }
+  // Convenience methods that match the original interactapi.js API
+  async getVersion() {
+    const commands = [this.createGetVersionCmd()];
+    const batchResponse = await this.executeBatch(null, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  async startSession(sessionId, ic, audienceID, audienceLevel, parameters, relyOnExistingSession, debug) {
+    const commands = [
+      this.createStartSessionCmd(ic, audienceID, audienceLevel, parameters, relyOnExistingSession, debug)
+    ];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  async getOffers(sessionId, ip, numberRequested) {
+    const commands = [this.createGetOffersCmd(ip, numberRequested)];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  async endSession(sessionId) {
+    const commands = [this.createEndSessionCmd()];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  async getProfile(sessionId) {
+    const commands = [this.createGetProfileCmd()];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  async postEvent(sessionId, event, parameters) {
+    const commands = [this.createPostEventCmd(event, parameters)];
+    const batchResponse = await this.executeBatch(sessionId, commands);
+    return this.extractFirstResponse(batchResponse);
+  }
+  // Command builders that match the original CommandUtil
+  createGetVersionCmd() {
+    return { action: "getVersion" };
+  }
+  createEndSessionCmd() {
+    return { action: "endSession" };
+  }
+  createStartSessionCmd(ic, audienceID, audienceLevel, parameters, relyOnExistingSession, debug) {
+    const cmd = {
+      action: "startSession",
+      ic,
+      audienceID,
+      audienceLevel,
+      relyOnExistingSession,
+      debug
+    };
+    if (parameters) {
+      cmd.parameters = parameters;
+    }
+    return cmd;
+  }
+  createGetOffersCmd(ip, numberRequested) {
+    return {
+      action: "getOffers",
+      ip,
+      numberRequested
+    };
+  }
+  createGetProfileCmd() {
+    return { action: "getProfile" };
+  }
+  createPostEventCmd(event, parameters) {
+    const cmd = {
+      action: "postEvent",
+      event
+    };
+    if (parameters) {
+      cmd.parameters = parameters;
+    }
+    return cmd;
+  }
+  // Helper to extract first response from batch (matching FirstResponseCallback behavior)
+  extractFirstResponse(batchResponse) {
+    if (batchResponse.responses && batchResponse.responses.length >= 1) {
+      return batchResponse.responses[0];
+    }
+    throw new InteractApiError(0, "No response in batch");
+  }
+  // Utility to create name-value pairs
+  static createParameter(name, value, type = "string") {
+    return { n: name, v: value, t: type };
+  }
+  // Simplified cookie handling (in real browser environment, this would use document.cookie)
+  getTokenFromCookie(name) {
+    return null;
+  }
+  setTokenCookie(name, value, endSession) {
+  }
+};
+export {
+  BatchBuilder,
+  InteractClient,
+  InteractApiError as InteractError,
+  InteractServletClient,
+  InteractClient as default
+};
+//# sourceMappingURL=index.js.map

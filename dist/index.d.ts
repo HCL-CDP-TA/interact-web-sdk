@@ -1,7 +1,198 @@
-interface ApiConfig {
-    baseUrl?: string;
+interface InteractConfig {
+    serverUrl: string;
+    interactiveChannel?: string;
     username?: string;
     password?: string;
+    enableLogging?: boolean;
+}
+interface AudienceConfig {
+    audienceLevel: "Visitor" | "Customer" | string;
+    audienceId: {
+        name: string;
+        value: string | number;
+        type: "string" | "numeric" | "datetime";
+    };
+}
+interface AudienceConfig {
+    audienceLevel: "Visitor" | "Customer" | string;
+    audienceId: {
+        name: string;
+        value: string | number;
+        type: "string" | "numeric" | "datetime";
+    };
+}
+interface SessionState {
+    sessionId: string | null;
+    isValid: boolean;
+    lastActivity: Date;
+}
+interface InteractMessage {
+    msg: string;
+    detailMsg: string;
+    msgLevel: number;
+    msgCode: number;
+}
+interface NameValuePair$1 {
+    n: string;
+    v: any;
+    t: "string" | "numeric" | "datetime";
+}
+interface Command$1 {
+    action: string;
+    ic?: string;
+    audienceID?: NameValuePair$1[];
+    audienceLevel?: string;
+    parameters?: NameValuePair$1[];
+    relyOnExistingSession?: boolean;
+    debug?: boolean;
+    ip?: string;
+    numberRequested?: number;
+    event?: string;
+    getOfferRequests?: any[];
+}
+interface OfferAttribute {
+    n: string;
+    v: any;
+    t: string;
+}
+interface Offer {
+    n: string;
+    code: string[];
+    treatmentCode: string;
+    score: number;
+    desc: string;
+    attributes: OfferAttribute[];
+}
+interface OfferList {
+    interactionPointName: string;
+    defaultString: string;
+    offers: Offer[];
+}
+interface InteractResponse {
+    sessionId?: string;
+    statusCode: number;
+    offerLists?: OfferList[];
+    profile?: NameValuePair$1[];
+    version?: string;
+    messages?: InteractMessage[];
+}
+interface BatchResponse {
+    batchStatusCode: number;
+    responses: InteractResponse[];
+}
+declare class InteractClient {
+    private config;
+    private tokenId;
+    private sessionState;
+    constructor(config: InteractConfig);
+    private convertAudienceToArray;
+    static convertAudienceToArray(audience: AudienceConfig): NameValuePair$1[];
+    getSessionId(): string | null;
+    setSessionId(sessionId: string | null): void;
+    isSessionValid(): boolean;
+    clearSession(): void;
+    static createVisitorAudience(visitorId?: string): AudienceConfig;
+    static createCustomerAudience(customerId: number): AudienceConfig;
+    private isSessionInvalid;
+    executeBatchWithRetry(sessionId: string | null, commands: Command$1[], audience?: AudienceConfig, maxRetries?: number): Promise<BatchResponse>;
+    executeBatch(sessionId: string | null, commands: Command$1[]): Promise<BatchResponse>;
+    startSessionLowLevel(sessionId: string | null, audienceID: NameValuePair$1[], audienceLevel: string, parameters?: NameValuePair$1[], relyOnExistingSession?: boolean, debug?: boolean): Promise<InteractResponse>;
+    startSession(audience: AudienceConfig, sessionId?: string | null): Promise<InteractResponse>;
+    getOffers(sessionId: string, interactionPoint: string, numberRequested?: number): Promise<InteractResponse>;
+    postEvent(sessionId: string, eventName: string, parameters?: NameValuePair$1[]): Promise<InteractResponse>;
+    postEvent(eventName: string, parameters?: NameValuePair$1[], options?: {
+        sessionId?: string;
+        autoManageSession?: boolean;
+        audience?: AudienceConfig;
+    }): Promise<InteractResponse>;
+    getVersion(): Promise<InteractResponse>;
+    endSession(sessionId: string): Promise<InteractResponse>;
+    setAudience(sessionId: string, audienceID: NameValuePair$1[], audienceLevel?: string): Promise<InteractResponse>;
+    setAudienceFromConfig(sessionId: string, audience: AudienceConfig, audienceLevel?: string): Promise<InteractResponse>;
+    createBatch(): BatchBuilder;
+    getOffersWithSession(interactionPoint: string, numberRequested?: number, audience?: AudienceConfig): Promise<InteractResponse>;
+    postEventWithSession(eventName: string, parameters?: NameValuePair$1[], audience?: AudienceConfig): Promise<InteractResponse>;
+    getOffersForPage(interactionPoint: string, audience: AudienceConfig, numberRequested?: number, trackPageView?: boolean): Promise<{
+        offers: Offer[];
+        sessionId: string;
+    }>;
+    static createParameter(name: string, value: any, type?: "string" | "numeric" | "datetime"): NameValuePair$1;
+    private extractFirstResponse;
+}
+declare class BatchBuilder {
+    private client;
+    private commands;
+    constructor(client: InteractClient);
+    startSession(audienceID: NameValuePair$1[], audienceLevel: string, parameters?: NameValuePair$1[], relyOnExistingSession?: boolean, debug?: boolean): BatchBuilder;
+    getOffers(interactionPoint: string, numberRequested?: number): BatchBuilder;
+    postEvent(eventName: string, parameters?: NameValuePair$1[]): BatchBuilder;
+    endSession(): BatchBuilder;
+    setAudience(audienceID: NameValuePair$1[], audienceLevel?: string): BatchBuilder;
+    execute(sessionId: string | null): Promise<BatchResponse>;
+}
+
+interface ServletApiConfig {
+    url: string;
+    m_user_name?: string;
+    m_user_password?: string;
+    enableLog?: string;
+}
+interface NameValuePair {
+    n: string;
+    v: any;
+    t: string;
+}
+interface Command {
+    action: string;
+    ic?: string;
+    audienceID?: string;
+    audienceLevel?: string;
+    parameters?: NameValuePair[];
+    relyOnExistingSession?: boolean;
+    debug?: boolean;
+    ip?: string;
+    numberRequested?: number;
+    event?: string;
+    getOfferRequests?: any[];
+}
+interface ServletResponse {
+    sessionId?: string;
+    statusCode: number;
+    offerLists?: any[];
+    profile?: NameValuePair[];
+    version?: string;
+    messages?: any[];
+}
+interface ServletBatchResponse {
+    batchStatusCode: number;
+    responses: ServletResponse[];
+}
+declare class InteractServletClient {
+    private config;
+    constructor(config: ServletApiConfig);
+    private executeCmd;
+    executeBatch(sessionId: string | null, commands: Command[]): Promise<ServletBatchResponse>;
+    getVersion(): Promise<ServletResponse>;
+    startSession(sessionId: string | null, ic: string, audienceID: string, audienceLevel: string, parameters?: NameValuePair[], relyOnExistingSession?: boolean, debug?: boolean): Promise<ServletResponse>;
+    getOffers(sessionId: string, ip: string, numberRequested: number): Promise<ServletResponse>;
+    endSession(sessionId: string): Promise<ServletResponse>;
+    getProfile(sessionId: string): Promise<ServletResponse>;
+    postEvent(sessionId: string, event: string, parameters?: NameValuePair[]): Promise<ServletResponse>;
+    private createGetVersionCmd;
+    private createEndSessionCmd;
+    private createStartSessionCmd;
+    private createGetOffersCmd;
+    private createGetProfileCmd;
+    private createPostEventCmd;
+    private extractFirstResponse;
+    static createParameter(name: string, value: any, type?: "string" | "numeric" | "datetime"): NameValuePair;
+    private getTokenFromCookie;
+    private setTokenCookie;
+}
+
+interface ApiConfig {
+    baseUrl?: string;
+    userName?: string;
     defaultHeaders?: Record<string, string>;
 }
 interface ParameterVO {
@@ -49,16 +240,6 @@ interface SetAudienceVO {
 interface PostEventVO {
     parameters?: ParameterVO[];
 }
-interface GetOffersMultipleIPCommandVO {
-    getOfferRequests: GetOfferRequestsVO[];
-    parameters?: ParameterVO[];
-}
-interface GetOfferRequestsVO {
-    dupPolicy: number;
-    ip: string;
-    numberRequested: number;
-    offerAttributes?: OfferAttribRequirementVO;
-}
 interface OfferAttribRequirementVO {
     numberRequested?: number;
     attributes?: ParameterVO[];
@@ -90,21 +271,6 @@ interface SetAudienceCommandVO {
 interface SetDebugCommandVO {
     debug: boolean;
 }
-interface BatchExecuteCommandVO {
-    startSession?: StartSessionCommandVO;
-    getOffers?: GetOffersCommandVO;
-    getOffersForMultipleInteractionPoints?: GetOffersMultipleIPCommandVO;
-    postEvent?: PostEventCommandVO;
-    setAudience?: SetAudienceCommandVO;
-    getProfile?: any;
-    endSession?: any;
-    setDebug?: SetDebugCommandVO;
-    getVersion?: boolean;
-}
-interface BatchResponseVO {
-    responses?: ResponseVO[];
-    batchStatusCode?: number;
-}
 interface DeploymentInfoVO {
     deployment?: any;
 }
@@ -124,104 +290,11 @@ interface InteractResourceConsumption {
     processTotalMemory?: number;
     processAllocatedMemory?: number;
 }
+
 declare class InteractApiError extends Error {
     status: number;
     statusText: string;
     constructor(status: number, statusText: string, message?: string);
 }
-declare class InteractApiClient {
-    private baseUrl;
-    private defaultHeaders;
-    constructor(config?: ApiConfig);
-    private request;
-    startSession(sessionId: string, ic: string, audienceLevel: string, audienceIDField: string, body?: StartSessionVO, escapeHtml?: boolean): Promise<ResponseVO>;
-    endSession(sessionId: string, parameters?: string, escapeHtml?: boolean): Promise<ResponseVO>;
-    setAudience(sessionId: string, audienceLevel: string, audienceIDField: string, body: SetAudienceVO, escapeHtml?: boolean): Promise<ResponseVO>;
-    getOffers(sessionId: string, interactionPointID: string, number?: number, parameters?: string, escapeHtml?: boolean): Promise<ResponseVO>;
-    getOffersForMultipleIPs(sessionId: string, body: GetOffersMultipleIPCommandVO, parameters?: string, escapeHtml?: boolean): Promise<ResponseVO>;
-    postEvent(sessionId: string, eventName: string, body?: PostEventVO, escapeHtml?: boolean): Promise<ResponseVO>;
-    getProfile(sessionId: string, parameters?: string, escapeHtml?: boolean): Promise<ResponseVO>;
-    batchExecute(sessionId: string, body: BatchExecuteCommandVO, escapeHtml?: boolean): Promise<BatchResponseVO>;
-    /**
-     * Complete interaction workflow in a single batch call:
-     * Start session → Get offers → End session
-     * This is the most common pattern for web interactions
-     */
-    executeCompleteInteraction(sessionId: string, ic: string, audienceLevel: string, audienceID: ParameterVO[], interactionPointID: string, numberOffers?: number, options?: {
-        sessionParameters?: ParameterVO[];
-        offerParameters?: ParameterVO[];
-        debug?: boolean;
-        relyOnExistingSession?: boolean;
-    }): Promise<BatchResponseVO>;
-    /**
-     * Session with event tracking and offers:
-     * Start session → Post event → Get offers → End session
-     */
-    executeInteractionWithEvent(sessionId: string, ic: string, audienceLevel: string, audienceID: ParameterVO[], eventName: string, interactionPointID: string, numberOffers?: number, options?: {
-        sessionParameters?: ParameterVO[];
-        eventParameters?: ParameterVO[];
-        offerParameters?: ParameterVO[];
-        debug?: boolean;
-    }): Promise<BatchResponseVO>;
-    /**
-     * Multi-touchpoint interaction in one batch:
-     * Start session → Get offers for multiple interaction points → End session
-     */
-    executeMultiTouchpointInteraction(sessionId: string, ic: string, audienceLevel: string, audienceID: ParameterVO[], offerRequests: GetOfferRequestsVO[], options?: {
-        sessionParameters?: ParameterVO[];
-        offerParameters?: ParameterVO[];
-        debug?: boolean;
-    }): Promise<BatchResponseVO>;
-    /**
-     * Profile and offers workflow:
-     * Start session → Get profile → Get offers → End session
-     */
-    executeProfileBasedInteraction(sessionId: string, ic: string, audienceLevel: string, audienceID: ParameterVO[], interactionPointID: string, numberOffers?: number, options?: {
-        sessionParameters?: ParameterVO[];
-        offerParameters?: ParameterVO[];
-        debug?: boolean;
-    }): Promise<BatchResponseVO>;
-    /**
-     * Custom batch builder for advanced scenarios
-     */
-    createBatchBuilder(sessionId: string): BatchBuilder;
-    getStatus(): Promise<ResponseVO>;
-    getResourceConsumption(): Promise<InteractResourceConsumption>;
-    getActiveDeployments(): Promise<DeploymentInfoVO[]>;
-    getDeploymentByIcId(icIdOrName: string): Promise<DeploymentInfoVO>;
-    getDataSources(): Promise<DataSourceInfoVO[]>;
-    testDataSourceConnection(datasourceName: string): Promise<boolean>;
-    getGDPRSQLScripts(body: any[], querySeparator?: string, nlsPrefix?: string, returnZip?: boolean): Promise<any>;
-    syncConsent(): Promise<ResponseVO>;
-    static createParameter(name: string, type: string, value: any): ParameterVO;
-    static createParameters(params: Array<{
-        name: string;
-        type: string;
-        value: any;
-    }>): ParameterVO[];
-}
-declare function createInteractClient(config?: ApiConfig): InteractApiClient;
-declare class BatchBuilder {
-    private client;
-    private sessionId;
-    private batchCommand;
-    constructor(client: InteractApiClient, sessionId: string);
-    startSession(ic: string, audienceLevel: string, audienceID: ParameterVO[], options?: {
-        debug?: boolean;
-        relyOnExistingSession?: boolean;
-        parameters?: ParameterVO[];
-        auIdParams?: ParameterVO[];
-    }): BatchBuilder;
-    getOffers(interactionPointID: string, numberRequested?: number, parameters?: ParameterVO[]): BatchBuilder;
-    getOffersMultiple(offerRequests: GetOfferRequestsVO[], parameters?: ParameterVO[]): BatchBuilder;
-    postEvent(eventName: string, parameters?: ParameterVO[]): BatchBuilder;
-    setAudience(audienceLevel: string, audienceID: ParameterVO[], parameters?: ParameterVO[]): BatchBuilder;
-    getProfile(): BatchBuilder;
-    endSession(): BatchBuilder;
-    setDebug(debug: boolean): BatchBuilder;
-    getVersion(): BatchBuilder;
-    execute(): Promise<BatchResponseVO>;
-    build(): BatchExecuteCommandVO;
-}
 
-export { type AdvisoryMessageVO, type ApiConfig, BatchBuilder, type BatchExecuteCommandVO, type BatchResponseVO, type DataSourceInfoVO, type DeploymentInfoVO, type GetOfferRequestsVO, type GetOffersCommandVO, type GetOffersMultipleIPCommandVO, InteractApiClient, InteractApiError, type InteractResourceConsumption, type OfferAttribRequirementVO, type OfferListVO, type OfferVO, type ParameterVO, type PostEventCommandVO, type PostEventVO, type ResponseVO, type SetAudienceCommandVO, type SetAudienceVO, type SetDebugCommandVO, type StartSessionCommandVO, type StartSessionVO, createInteractClient, InteractApiClient as default };
+export { type AdvisoryMessageVO, type ApiConfig, type AudienceConfig, BatchBuilder, type BatchResponse, type Command$1 as Command, type DataSourceInfoVO, type DeploymentInfoVO, type GetOffersCommandVO, InteractClient, type InteractConfig, InteractApiError as InteractError, type InteractResourceConsumption, type InteractResponse, InteractServletClient, type NameValuePair$1 as NameValuePair, type Offer, type OfferAttribRequirementVO, type OfferAttribute, type OfferList, type OfferListVO, type OfferVO, type ParameterVO, type PostEventCommandVO, type PostEventVO, type ResponseVO, type SessionState, type SetAudienceCommandVO, type SetAudienceVO, type SetDebugCommandVO, type StartSessionCommandVO, type StartSessionVO, InteractClient as default };

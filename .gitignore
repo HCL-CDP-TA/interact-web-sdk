@@ -1,0 +1,58 @@
+# HCL Interact SDK Core Package
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs (keep for distribution)
+# dist/
+
+# Temp build files
+*.tsbuildinfo
+
+# Environment files
+.env*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Cache
+.cache/
+.turbo/
+
+# Temporary
+tmp/
+temp/
+
+# Development/testing
+coverage/
+.nyc_output/
+
+# Original/backup files
+original/
+backup/
+*.backup
+*.bak
+
+# Lock files (allow different environments)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

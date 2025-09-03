@@ -1,22 +1,37 @@
 {
-  "name": "@hcl-cdp-ta/interact-web-sdk",
+  "name": "@hcl-cdp-ta/interact-sdk",
   "version": "0.0.1",
-  "description": "HCL Interact Web SDK",
+  "description": "HCL Interact SDK",
   "license": "ISC",
   "author": "Simon Pallister",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "browser": "./dist/index.global.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/index.global.js",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch"
+    "build": "tsup src/index.ts --format esm,cjs,iife --dts",
+    "dev": "tsup src/index.ts --format esm,cjs,iife --dts --watch"
   },
   "devDependencies": {
     "terser": "^5.39.0",
     "tsup": "^8.3.6",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "@types/node-fetch": "^2.6.13"
   },
   "dependencies": {
-    "@types/node-fetch": "^2.6.13",
     "node-fetch": "^3.3.2"
   }
 }
