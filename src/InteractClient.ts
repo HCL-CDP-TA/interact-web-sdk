@@ -18,15 +18,6 @@ export interface AudienceConfig {
   }
 }
 
-export interface AudienceConfig {
-  audienceLevel: "Visitor" | "Customer" | string
-  audienceId: {
-    name: string
-    value: string | number
-    type: "string" | "numeric" | "datetime"
-  }
-}
-
 export interface SessionState {
   sessionId: string | null
   isValid: boolean
