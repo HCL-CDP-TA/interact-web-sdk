@@ -410,7 +410,9 @@ export class InteractClient {
       }
 
       if (!sessionId) {
-        throw new Error("No session available. Provide sessionId, existing session, or audience with autoManageSession.")
+        throw new Error(
+          "No session available. Provide sessionId, existing session, or audience with autoManageSession.",
+        )
       }
 
       const commands: Command[] = [
