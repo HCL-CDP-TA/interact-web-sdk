@@ -352,17 +352,78 @@ export class InteractClient {
     return response
   }
 
-  async getOffers(sessionId: string, interactionPoint: string, numberRequested: number = 1): Promise<InteractResponse> {
-    const commands: Command[] = [
-      {
-        action: "getOffers",
-        ip: interactionPoint,
-        numberRequested,
-      },
-    ]
+  // Method overloads for getOffers - provides multiple call signatures
+  async getOffers(sessionId: string, interactionPoint: string, numberRequested?: number): Promise<InteractResponse>
+  async getOffers(
+    interactionPoint: string,
+    numberRequested?: number,
+    options?: {
+      sessionId?: string
+      autoManageSession?: boolean
+      audience?: AudienceConfig
+    },
+  ): Promise<InteractResponse>
 
-    const batchResponse = await this.executeBatch(sessionId, commands)
-    return this.extractFirstResponse(batchResponse)
+  // Implementation handles both signatures
+  async getOffers(
+    sessionIdOrInteractionPoint: string,
+    interactionPointOrNumberRequested?: string | number,
+    numberRequestedOrOptions?:
+      | number
+      | {
+          sessionId?: string
+          autoManageSession?: boolean
+          audience?: AudienceConfig
+        },
+  ): Promise<InteractResponse> {
+    // Determine which signature was used
+    const isLegacySignature = typeof interactionPointOrNumberRequested === "string"
+
+    if (isLegacySignature) {
+      // Legacy signature: getOffers(sessionId, interactionPoint, numberRequested?)
+      const sessionId = sessionIdOrInteractionPoint
+      const interactionPoint = interactionPointOrNumberRequested as string
+      const numberRequested = (numberRequestedOrOptions as number) || 1
+
+      const commands: Command[] = [
+        {
+          action: "getOffers",
+          ip: interactionPoint,
+          numberRequested,
+        },
+      ]
+
+      const batchResponse = await this.executeBatch(sessionId, commands)
+      return this.extractFirstResponse(batchResponse)
+    } else {
+      // New signature: getOffers(interactionPoint, numberRequested?, options?)
+      const interactionPoint = sessionIdOrInteractionPoint
+      const numberRequested = (interactionPointOrNumberRequested as number) || 1
+      const options = (numberRequestedOrOptions as any) || {}
+
+      let sessionId = options.sessionId || this.getSessionId()
+
+      // If no session and autoManageSession is true (default), start one
+      if (!sessionId && options.autoManageSession !== false && options.audience) {
+        const sessionResponse = await this.startSession(options.audience)
+        sessionId = sessionResponse.sessionId || null
+      }
+
+      if (!sessionId) {
+        throw new Error("No session available. Provide sessionId, existing session, or audience with autoManageSession.")
+      }
+
+      const commands: Command[] = [
+        {
+          action: "getOffers",
+          ip: interactionPoint,
+          numberRequested,
+        },
+      ]
+
+      const batchResponse = await this.executeBatchWithRetry(sessionId, commands, options.audience)
+      return this.extractFirstResponse(batchResponse)
+    }
   }
 
   // Method overloads for postEvent - provides multiple call signatures
@@ -519,36 +580,6 @@ export class InteractClient {
   // Batch builder for complex workflows
   createBatch(): BatchBuilder {
     return new BatchBuilder(this)
-  }
-
-  // Enhanced convenience methods with automatic session management
-  async getOffersWithSession(
-    interactionPoint: string,
-    numberRequested: number = 1,
-    audience?: AudienceConfig,
-  ): Promise<InteractResponse> {
-    let sessionId = this.getSessionId()
-
-    // If no session, start one
-    if (!sessionId && audience) {
-      const sessionResponse = await this.startSession(audience)
-      sessionId = sessionResponse.sessionId || null
-    }
-
-    if (!sessionId) {
-      throw new Error("No session available and no audience provided to start new session")
-    }
-
-    const commands: Command[] = [
-      {
-        action: "getOffers",
-        ip: interactionPoint,
-        numberRequested,
-      },
-    ]
-
-    const batchResponse = await this.executeBatchWithRetry(sessionId, commands, audience)
-    return this.extractFirstResponse(batchResponse)
   }
 
   // Backward compatibility wrapper for postEventWithSession

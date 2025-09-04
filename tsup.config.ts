@@ -8,8 +8,8 @@ export default defineConfig(options => ({
   skipNodeModulesBundle: true,
   clean: true,
   watch: options.watch,
-  minify: false, // Disable minification for development
+  minify: false,
   sourcemap: true,
   globalName: "HCLInteractSDK", // For IIFE format
-  platform: "browser", // Optimize for browser usage
+  // Don't set platform to let tsup handle each format appropriately
 }))
