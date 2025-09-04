@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v1.1.0...v1.1.1) (2025-09-04)
+
+
+### Bug Fixes
+
+* build before public to npm ([6eed29c](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/6eed29c892b1bab97c3605405a30beb4e06dd977))
+
 ## [1.1.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v1.0.1...v1.1.0) (2025-09-04)
 
 
