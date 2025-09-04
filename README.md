@@ -66,11 +66,14 @@ The SDK is fully compatible with vanilla JavaScript and can be used directly in 
 
       async function demo() {
         try {
-          // Start session
+          // Start session - Manual audience creation
           const audience = {
             audienceLevel: "Visitor",
             audienceId: { name: "VisitorID", value: "12345", type: "string" },
           }
+
+          // Or use the helper method (recommended)
+          const audienceHelper = InteractClient.createAudience("Visitor", "VisitorID", "12345", "string")
 
           const sessionResponse = await client.startSession(audience)
           console.log("Session started:", sessionResponse.sessionId)
@@ -122,10 +125,8 @@ For maximum compatibility, you can use the IIFE (Immediately Invoked Function Ex
 
       async function demo() {
         try {
-          const audience = {
-            audienceLevel: "Visitor",
-            audienceId: { name: "VisitorID", value: "12345", type: "string" },
-          }
+          // Using helper method for cleaner code
+          const audience = HCLInteractSDK.InteractClient.createAudience("Visitor", "VisitorID", "12345")
 
           const sessionResponse = await client.startSession(audience)
           console.log("Session:", sessionResponse.sessionId)
@@ -446,6 +447,34 @@ Open [http://localhost:3000](http://localhost:3000) to explore all SDK features.
 - Consistent response handling across all operations
 - Built-in session state management
 - Optimized for performance and reliability
+
+## Helper Methods
+
+The SDK provides static helper methods to simplify common tasks:
+
+### createAudience()
+
+Creates an AudienceConfig object with proper typing:
+
+```typescript
+// Using the helper method (recommended)
+const audience = InteractClient.createAudience("Visitor", "VisitorID", "12345", "string")
+
+// Equivalent to manually creating:
+const audience = {
+  audienceLevel: "Visitor",
+  audienceId: { name: "VisitorID", value: "12345", type: "string" },
+}
+```
+
+### createParameter()
+
+Creates a NameValuePair for event parameters:
+
+```typescript
+const param = InteractClient.createParameter("pageURL", "/homepage", "string")
+// Returns: { n: "pageURL", v: "/homepage", t: "string" }
+```
 
 ### Type-Safe Operations
 

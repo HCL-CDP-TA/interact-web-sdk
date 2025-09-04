@@ -627,6 +627,22 @@ export class InteractClient {
     return { n: name, v: value, t: type }
   }
 
+  static createAudience(
+    audienceLevel: "Visitor" | "Customer" | string,
+    audienceIdName: string,
+    audienceIdValue: string | number,
+    audienceIdType: "string" | "numeric" | "datetime" = "string",
+  ): AudienceConfig {
+    return {
+      audienceLevel,
+      audienceId: {
+        name: audienceIdName,
+        value: audienceIdValue,
+        type: audienceIdType,
+      },
+    }
+  }
+
   private extractFirstResponse(batchResponse: BatchResponse): InteractResponse {
     if (batchResponse.responses && batchResponse.responses.length >= 1) {
       return batchResponse.responses[0]
