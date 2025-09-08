@@ -11,5 +11,8 @@ export default defineConfig(options => ({
   minify: false,
   sourcemap: true,
   globalName: "HCLInteractSDK", // For IIFE format
-  // Don't set platform to let tsup handle each format appropriately
+  cjsInterop: true,
+  splitting: false,
+  target: "es2018", // Lower target for better compatibility
+  platform: "neutral", // Let each format determine its own platform
 }))

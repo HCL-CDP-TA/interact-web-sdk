@@ -54,10 +54,14 @@ The SDK is fully compatible with vanilla JavaScript and can be used directly in 
   <body>
     <script type="module">
       // Import directly from CDN (when published)
-      import { InteractClient } from "https://unpkg.com/@hcl-cdp-ta/interact-sdk/dist/index.js"
+      import {
+        InteractClient,
+        InteractAudience,
+        InteractParam,
+      } from "https://unpkg.com/@hcl-cdp-ta/interact-sdk/dist/index.js"
 
       // Or serve the file locally
-      // import { InteractClient } from './node_modules/@hcl-cdp-ta/interact-sdk/dist/index.js'
+      // import { InteractClient, InteractAudience, InteractParam } from './node_modules/@hcl-cdp-ta/interact-sdk/dist/index.js'
 
       const client = new InteractClient({
         serverUrl: "https://your-interact-server.com/interact",
@@ -66,16 +70,19 @@ The SDK is fully compatible with vanilla JavaScript and can be used directly in 
 
       async function demo() {
         try {
-          // Start session - Manual audience creation
+          // Option 1: Manual audience creation
           const audience = {
             audienceLevel: "Visitor",
             audienceId: { name: "VisitorID", value: "12345", type: "string" },
           }
 
-          // Or use the helper method (recommended)
+          // Option 2: Helper method
           const audienceHelper = InteractClient.createAudience("Visitor", "VisitorID", "12345", "string")
 
-          const sessionResponse = await client.startSession(audience)
+          // Option 3: Class-based fluent API (recommended)
+          const audienceFluent = new InteractAudience("Visitor", InteractParam.string("VisitorID", "12345"))
+
+          const sessionResponse = await client.startSession(audienceFluent)
           console.log("Session started:", sessionResponse.sessionId)
 
           // Get offers
@@ -447,6 +454,49 @@ Open [http://localhost:3000](http://localhost:3000) to explore all SDK features.
 - Consistent response handling across all operations
 - Built-in session state management
 - Optimized for performance and reliability
+
+## API Styles
+
+The SDK supports multiple API styles to match your preferences:
+
+### 1. Class-Based Fluent API (Recommended)
+
+Type-safe, modern approach with IntelliSense support:
+
+```typescript
+import { InteractClient, InteractAudience, InteractParam } from "@hcl-cdp-ta/interact-sdk"
+
+// Create audience with fluent API
+const audience = new InteractAudience("Visitor", InteractParam.string("VisitorID", "12345"))
+
+// Alternative factory methods
+const visitorAudience = InteractAudience.visitor(InteractParam.string("VisitorID", "12345"))
+const customerAudience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+
+// Start session
+await client.startSession(audience)
+```
+
+### 2. Static Helper Methods
+
+Simple functions for quick setup:
+
+```typescript
+const audience = InteractClient.createAudience("Visitor", "VisitorID", "12345", "string")
+await client.startSession(audience)
+```
+
+### 3. Manual Object Creation
+
+Direct object creation for maximum control:
+
+```typescript
+const audience = {
+  audienceLevel: "Visitor",
+  audienceId: { name: "VisitorID", value: "12345", type: "string" },
+}
+await client.startSession(audience)
+```
 
 ## Helper Methods
 

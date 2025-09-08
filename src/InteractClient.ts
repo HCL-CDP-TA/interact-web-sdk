@@ -1,6 +1,75 @@
 // HCL Interact SDK - Servlet API Compatible
 // Clean, opinionated TypeScript client with React integration
 
+// Enums for type safety
+export enum InteractParamType {
+  String = "string",
+  Numeric = "numeric",
+  DateTime = "datetime",
+}
+
+// Class-based builders for fluent API
+export class InteractParam {
+  public readonly name: string
+  public readonly value: string | number
+  public readonly type: InteractParamType
+
+  constructor(options: { name: string; value: string | number; type?: InteractParamType }) {
+    this.name = options.name
+    this.value = options.value
+    this.type = options.type || InteractParamType.String
+  }
+
+  // Static factory methods for convenience
+  static string(name: string, value: string): InteractParam {
+    return new InteractParam({ name, value, type: InteractParamType.String })
+  }
+
+  static numeric(name: string, value: number): InteractParam {
+    return new InteractParam({ name, value, type: InteractParamType.Numeric })
+  }
+
+  static dateTime(name: string, value: string): InteractParam {
+    return new InteractParam({ name, value, type: InteractParamType.DateTime })
+  }
+
+  // Convert to internal format
+  toNameValuePair(): { name: string; value: string | number; type: "string" | "numeric" | "datetime" } {
+    return {
+      name: this.name,
+      value: this.value,
+      type: this.type as "string" | "numeric" | "datetime",
+    }
+  }
+}
+
+export class InteractAudience {
+  public readonly audienceLevel: string
+  public readonly audienceId: InteractParam
+
+  constructor(audienceLevel: string, audienceId: InteractParam) {
+    this.audienceLevel = audienceLevel
+    this.audienceId = audienceId
+  }
+
+  // Static factory methods for common audience levels
+  static visitor(audienceId: InteractParam): InteractAudience {
+    return new InteractAudience("Visitor", audienceId)
+  }
+
+  static customer(audienceId: InteractParam): InteractAudience {
+    return new InteractAudience("Customer", audienceId)
+  }
+
+  // Convert to internal format
+  toAudienceConfig(): AudienceConfig {
+    return {
+      audienceLevel: this.audienceLevel,
+      audienceId: this.audienceId.toNameValuePair(),
+    }
+  }
+}
+
 export interface InteractConfig {
   serverUrl: string // e.g., "https://your-server.com/interact"
   interactiveChannel?: string // defaults to "_RealTimePersonalization_"
@@ -332,9 +401,20 @@ export class InteractClient {
   }
 
   // Main session start method with audience config and optional sessionId
-  async startSession(audience: AudienceConfig, sessionId?: string | null): Promise<InteractResponse> {
-    const audienceIdArray = this.convertAudienceToArray(audience)
-    const response = await this.startSessionLowLevel(sessionId ?? null, audienceIdArray, audience.audienceLevel)
+  // Method overloads for startSession
+  async startSession(audience: AudienceConfig, sessionId?: string | null): Promise<InteractResponse>
+  async startSession(audience: InteractAudience, sessionId?: string | null): Promise<InteractResponse>
+
+  // Implementation handles both signatures
+  async startSession(
+    audience: AudienceConfig | InteractAudience,
+    sessionId?: string | null,
+  ): Promise<InteractResponse> {
+    // Convert InteractAudience to AudienceConfig if needed
+    const audienceConfig = audience instanceof InteractAudience ? audience.toAudienceConfig() : audience
+
+    const audienceIdArray = this.convertAudienceToArray(audienceConfig)
+    const response = await this.startSessionLowLevel(sessionId ?? null, audienceIdArray, audienceConfig.audienceLevel)
 
     if (response.sessionId) {
       this.setSessionId(response.sessionId)
