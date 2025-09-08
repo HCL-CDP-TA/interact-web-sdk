@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v1.1.1...v2.0.0) (2025-09-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Breaking changes to API format
+
+### Features
+
+* Breaking changes to API format ([276ec50](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/276ec50c692931ddf08dc25febba329ed59681f5))
+
 ## [1.1.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v1.1.0...v1.1.1) (2025-09-04)
 
 
