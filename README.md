@@ -263,7 +263,12 @@ Efficient batch operations for complex workflows and performance optimization.
 
 ### Session Management
 
-- `startSession(audience, sessionId?)` - Start session with audience config and optional custom session ID
+- `startSession(audience, sessionId?, options?)` - Start session with audience config and optional custom session ID
+  - `audience` - AudienceConfig or InteractAudience object defining the user
+  - `sessionId` - Optional custom session ID (pass `null` to auto-generate)
+  - `options.parameters` - Optional additional parameters to send with session start
+  - `options.relyOnExistingSession` - Whether to rely on existing session (default: `true`)
+  - `options.debug` - Enable debug mode for additional diagnostics (default: `false`)
 - `setAudience(sessionId, level, audienceData)` - Set or update audience information
 - `getSessionId()` - Get current active session ID
 - `endSession(sessionId)` - End session and cleanup
@@ -298,6 +303,34 @@ const response = await client.startSession(audience, customSessionId)
 console.log(response.sessionId) // "my-custom-session-123"
 ```
 
+### Advanced Session Options
+
+```typescript
+// Basic session start
+await client.startSession(audience)
+
+// Session with custom ID
+await client.startSession(audience, "my-session-123")
+
+// Session without custom ID but with advanced options
+await client.startSession(audience, null, {
+  relyOnExistingSession: false, // Force new session (default: true)
+  debug: true, // Enable debug mode (default: false)
+  parameters: [
+    // Optional additional parameters
+    { n: "pageURL", v: "/homepage", t: "string" },
+    { n: "userAgent", v: navigator.userAgent, t: "string" },
+  ],
+})
+
+// All options combined
+await client.startSession(audience, "custom-session-456", {
+  relyOnExistingSession: false,
+  debug: true,
+  parameters: [{ n: "source", v: "mobile-app", t: "string" }],
+})
+```
+
 ### Audience Management
 
 ```typescript
@@ -315,6 +348,7 @@ await client.setAudience(sessionId, "Customer", [
 ```typescript
 const audienceArray = [{ n: "VisitorID", v: "12345", t: "string" }]
 
+// Basic batch
 const batch = client
   .createBatch()
   .startSession(audienceArray, "Visitor")
@@ -322,6 +356,21 @@ const batch = client
   .postEvent("page_view")
 
 const results = await batch.execute(null)
+
+// Batch with advanced session options
+const advancedBatch = client
+  .createBatch()
+  .startSession(
+    audienceArray,
+    "Visitor",
+    [{ n: "source", v: "mobile", t: "string" }], // parameters
+    false, // relyOnExistingSession
+    true, // debug
+  )
+  .getOffers("homepage_hero", 3)
+  .postEvent("page_view")
+
+const advancedResults = await advancedBatch.execute(null)
 ```
 
 ## TypeScript Support

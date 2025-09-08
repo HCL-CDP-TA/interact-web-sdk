@@ -404,17 +404,38 @@ export class InteractClient {
   // Method overloads for startSession
   async startSession(audience: AudienceConfig, sessionId?: string | null): Promise<InteractResponse>
   async startSession(audience: InteractAudience, sessionId?: string | null): Promise<InteractResponse>
-
-  // Implementation handles both signatures
   async startSession(
     audience: AudienceConfig | InteractAudience,
     sessionId?: string | null,
+    options?: {
+      parameters?: NameValuePair[]
+      relyOnExistingSession?: boolean
+      debug?: boolean
+    },
+  ): Promise<InteractResponse>
+
+  // Implementation handles all signatures
+  async startSession(
+    audience: AudienceConfig | InteractAudience,
+    sessionId?: string | null,
+    options?: {
+      parameters?: NameValuePair[]
+      relyOnExistingSession?: boolean
+      debug?: boolean
+    },
   ): Promise<InteractResponse> {
     // Convert InteractAudience to AudienceConfig if needed
     const audienceConfig = audience instanceof InteractAudience ? audience.toAudienceConfig() : audience
 
     const audienceIdArray = this.convertAudienceToArray(audienceConfig)
-    const response = await this.startSessionLowLevel(sessionId ?? null, audienceIdArray, audienceConfig.audienceLevel)
+    const response = await this.startSessionLowLevel(
+      sessionId ?? null,
+      audienceIdArray,
+      audienceConfig.audienceLevel,
+      options?.parameters,
+      options?.relyOnExistingSession ?? true,
+      options?.debug ?? false,
+    )
 
     if (response.sessionId) {
       this.setSessionId(response.sessionId)
