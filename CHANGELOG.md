@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.1.0...v2.2.0) (2025-09-09)
+
+
+### Features
+
+* improved batch processing ([a8a01e0](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/a8a01e08ba592c0c720a4ae16800f51b12007019))
+
 ## [2.1.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.0.0...v2.1.0) (2025-09-09)
 
 
