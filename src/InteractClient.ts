@@ -119,6 +119,7 @@ export interface Command {
   numberRequested?: number
   event?: string
   getOfferRequests?: any[]
+  customSessionId?: string | null // For startSession commands with custom session ID
 }
 
 export interface OfferAttribute {
@@ -720,8 +721,12 @@ export class BatchBuilder {
     this.client = client
   }
 
+  // Method overloads for startSession (matching main client)
+  startSession(audience: AudienceConfig, sessionId?: string | null): BatchBuilder
+  startSession(audience: InteractAudience, sessionId?: string | null): BatchBuilder
   startSession(
     audience: AudienceConfig | InteractAudience,
+    sessionId?: string | null,
     options?: {
       parameters?: NameValuePair[]
       relyOnExistingSession?: boolean
@@ -737,14 +742,21 @@ export class BatchBuilder {
   ): BatchBuilder
   startSession(
     audienceOrArray: AudienceConfig | InteractAudience | NameValuePair[],
-    audienceLevelOrOptions?:
+    sessionIdOrAudienceLevelOrOptions?:
       | string
+      | null
       | {
           parameters?: NameValuePair[]
           relyOnExistingSession?: boolean
           debug?: boolean
         },
-    parameters?: NameValuePair[],
+    parametersOrOptions?:
+      | NameValuePair[]
+      | {
+          parameters?: NameValuePair[]
+          relyOnExistingSession?: boolean
+          debug?: boolean
+        },
     relyOnExistingSession: boolean = true,
     debug: boolean = false,
   ): BatchBuilder {
@@ -754,12 +766,17 @@ export class BatchBuilder {
         audienceOrArray instanceof InteractAudience
           ? (audienceOrArray as InteractAudience).toAudienceConfig()
           : (audienceOrArray as AudienceConfig)
-      const options =
-        (audienceLevelOrOptions as {
-          parameters?: NameValuePair[]
-          relyOnExistingSession?: boolean
-          debug?: boolean
-        }) || {}
+
+      // Check if second parameter is sessionId (string/null) or options (object)
+      let sessionId: string | null = null
+      let options: { parameters?: NameValuePair[]; relyOnExistingSession?: boolean; debug?: boolean } = {}
+
+      if (typeof sessionIdOrAudienceLevelOrOptions === "string" || sessionIdOrAudienceLevelOrOptions === null) {
+        sessionId = sessionIdOrAudienceLevelOrOptions
+        options = (parametersOrOptions as any) || {}
+      } else {
+        options = (sessionIdOrAudienceLevelOrOptions as any) || {}
+      }
 
       const audienceIdArray = this.client["convertAudienceToArray"](audience)
       this.commands.push({
@@ -770,13 +787,15 @@ export class BatchBuilder {
         parameters: options.parameters,
         relyOnExistingSession: options.relyOnExistingSession ?? true,
         debug: options.debug ?? false,
+        customSessionId: sessionId, // Store custom session ID for special handling
       })
       return this
     }
 
     // Handle legacy signature with NameValuePair[]
     const audienceID = audienceOrArray as NameValuePair[]
-    const audienceLevel = audienceLevelOrOptions as string
+    const audienceLevel = sessionIdOrAudienceLevelOrOptions as string
+    const parameters = parametersOrOptions as NameValuePair[]
 
     this.commands.push({
       action: "startSession",
@@ -840,8 +859,21 @@ export class BatchBuilder {
     return this
   }
 
+  setAudienceFromConfig(audience: AudienceConfig, audienceLevel?: string): BatchBuilder {
+    const audienceIdArray = this.client["convertAudienceToArray"](audience)
+    return this.setAudience(audienceIdArray, audienceLevel)
+  }
+
   async execute(sessionId: string | null): Promise<BatchResponse> {
-    const result = await this.client.executeBatch(sessionId, this.commands)
+    // Handle special case: if first command is startSession with customSessionId, use that instead
+    const effectiveSessionId =
+      this.commands.length > 0 &&
+      this.commands[0].action === "startSession" &&
+      this.commands[0].customSessionId !== undefined
+        ? this.commands[0].customSessionId
+        : sessionId
+
+    const result = await this.client.executeBatch(effectiveSessionId, this.commands)
     this.commands = [] // Reset for reuse
     return result
   }

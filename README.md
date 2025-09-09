@@ -267,15 +267,54 @@ Efficient batch operations for complex workflows and performance optimization.
 
 #### Batch Builder Methods
 
-The BatchBuilder supports the same method signatures as the main client for consistency:
+The BatchBuilder supports the same method signatures as the main client for **complete consistency**:
 
-- `startSession(audience, options?)` - Add session start to batch (modern signature)
-- `startSession(audienceID, audienceLevel, parameters?, relyOnExistingSession?, debug?)` - Legacy signature
-- `getOffers(interactionPoint, numberRequested?, options?)` - Add get offers to batch
-- `postEvent(eventName, parameters?, options?)` - Add post event to batch
-- `setAudience(audienceID, audienceLevel?)` - Add set audience to batch
+- `startSession(audience, sessionId?)` - With AudienceConfig/InteractAudience
+- `startSession(audience, sessionId?, options?)` - With full options support
+- `getOffers(interactionPoint, numberRequested?, options?)` - Same as main client
+- `postEvent(eventName, parameters?, options?)` - Same as main client
+- `setAudience(audienceID, audienceLevel?)` - Set audience in batch
+- `setAudienceFromConfig(audience, audienceLevel?)` - Set audience using AudienceConfig
 - `endSession()` - Add end session to batch
 - `execute(sessionId)` - Execute the batch with specified session ID
+
+**Key Point**: BatchBuilder methods operate **exactly the same** as the direct client methods, providing a consistent developer experience.
+
+#### API Consistency Example
+
+```typescript
+const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+
+// Direct client calls
+await client.startSession(audience, "custom-session-123")
+await client.getOffers("homepage", 3, { autoManageSession: true })
+await client.postEvent("page_view", [], { audience })
+
+// Equivalent batch calls - SAME signatures!
+const batch = client
+  .createBatch()
+  .startSession(audience, "custom-session-123") // Same signature
+  .getOffers("homepage", 3, { autoManageSession: true }) // Same signature
+  .postEvent("page_view", [], { audience }) // Same signature
+
+await batch.execute(null)
+```
+
+#### Session ID Handling in Batches
+
+- **Batch Session ID**: Passed to `execute(sessionId)` - used for all commands in the batch
+- **StartSession Custom ID**: If `startSession()` specifies a custom session ID, it takes precedence
+- **Priority**: Custom session ID in `startSession()` > session ID passed to `execute()`
+
+```typescript
+// Custom session ID in startSession takes precedence
+const batch = client
+  .createBatch()
+  .startSession(audience, "custom-123") // This session ID is used
+  .getOffers("homepage", 3)
+
+await batch.execute("ignored-session-id") // "custom-123" is used instead
+```
 
 ## Advanced Features
 
@@ -439,7 +478,7 @@ await client.setAudience(sessionId, "Customer", [
 
 ```typescript
 // Modern approach with fluent API
-const audience = InteractAudience.visitor(InteractParam.string("VisitorID", "12345"))
+const audience = InteractAudience.visitor(InteractParam.string("VisitorID", "0"))
 
 // Basic batch with automatic session management
 const batch = client.createBatch().startSession(audience).getOffers("homepage_hero", 3).postEvent("page_view")
@@ -449,33 +488,30 @@ const results = await batch.execute(null)
 // Batch with enhanced options
 const advancedBatch = client
   .createBatch()
-  .startSession(audience, {
-    parameters: [InteractParam.string("source", "mobile").toNameValuePair()],
+  .startSession(audience, null, {
+    parameters: [InteractClient.createParameter("UACIWaitForSegmentation", "true")],
     relyOnExistingSession: false,
     debug: true,
   })
-  .getOffers("homepage_hero", 3, {
-    // Options available but batch execution doesn't use them (commands are executed in sequence)
-  })
-  .postEvent("page_view", [InteractParam.string("pageType", "homepage").toNameValuePair()])
+  .getOffers("homepage_hero", 3)
+  .postEvent("page_view", [InteractClient.createParameter("pageType", "homepage")])
 
 const advancedResults = await advancedBatch.execute(null)
 
-// Legacy approach (still supported)
-const audienceArray = [{ n: "VisitorID", v: "12345", t: "string" }]
-const legacyBatch = client
+// Using custom session ID in batch startSession
+const customSessionBatch = client
   .createBatch()
-  .startSession(
-    audienceArray,
-    "Visitor",
-    [{ n: "source", v: "mobile", t: "string" }], // parameters
-    false, // relyOnExistingSession
-    true, // debug
-  )
+  .startSession(audience, "my-custom-session-123") // Custom session ID
   .getOffers("homepage_hero", 3)
   .postEvent("page_view")
 
-const legacyResults = await legacyBatch.execute(null)
+// When startSession has custom session ID, it takes precedence over execute() parameter
+const customResults = await customSessionBatch.execute(null)
+
+// Using existing session (no startSession needed)
+const existingSessionBatch = client.createBatch().getOffers("homepage_hero", 3).postEvent("page_view")
+
+const existingResults = await existingSessionBatch.execute("existing-session-id")
 ```
 
 ## TypeScript Support
@@ -582,9 +618,9 @@ useEffect(() => {
 
 ### Clean Servlet-Based Design
 
-- Unified servlet API approach (legacy REST API support removed)
+- Unified servlet API approach
 - Consistent response handling across all operations
-- Built-in session state management
+- Built-in session state management with automatic recovery
 - Optimized for performance and reliability
 
 ## API Styles
