@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.0.0...v2.1.0) (2025-09-09)
+
+
+### Features
+
+* add options to createSession ([c9323b8](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/c9323b885722441c5a1ec256ca5935ff658cb6fd))
+* improved session management ([0b2a45e](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/0b2a45e95dcaee3af301eba511d93fece505a42e))
+
 ## [2.0.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v1.1.1...v2.0.0) (2025-09-08)
 
 
