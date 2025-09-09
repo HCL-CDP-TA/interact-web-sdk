@@ -263,6 +263,19 @@ Efficient batch operations for complex workflows and performance optimization.
 
 - `createBatch()` - Create batch builder for multiple operations
 - Execute multiple API calls in a single request for optimal performance
+- **Note**: Batch operations execute commands sequentially on the server. Session management options in individual batch commands are for API consistency but don't affect execution (the batch executes with the sessionId passed to `execute()`)
+
+#### Batch Builder Methods
+
+The BatchBuilder supports the same method signatures as the main client for consistency:
+
+- `startSession(audience, options?)` - Add session start to batch (modern signature)
+- `startSession(audienceID, audienceLevel, parameters?, relyOnExistingSession?, debug?)` - Legacy signature
+- `getOffers(interactionPoint, numberRequested?, options?)` - Add get offers to batch
+- `postEvent(eventName, parameters?, options?)` - Add post event to batch
+- `setAudience(audienceID, audienceLevel?)` - Add set audience to batch
+- `endSession()` - Add end session to batch
+- `execute(sessionId)` - Execute the batch with specified session ID
 
 ## Advanced Features
 
@@ -425,19 +438,32 @@ await client.setAudience(sessionId, "Customer", [
 ### Batch Operations Example
 
 ```typescript
-const audienceArray = [{ n: "VisitorID", v: "0", t: "string" }]
+// Modern approach with fluent API
+const audience = InteractAudience.visitor(InteractParam.string("VisitorID", "12345"))
 
-// Basic batch
-const batch = client
-  .createBatch()
-  .startSession(audienceArray, "Visitor")
-  .getOffers("homepage_hero", 3)
-  .postEvent("page_view")
+// Basic batch with automatic session management
+const batch = client.createBatch().startSession(audience).getOffers("homepage_hero", 3).postEvent("page_view")
 
 const results = await batch.execute(null)
 
-// Batch with advanced session options
+// Batch with enhanced options
 const advancedBatch = client
+  .createBatch()
+  .startSession(audience, {
+    parameters: [InteractParam.string("source", "mobile").toNameValuePair()],
+    relyOnExistingSession: false,
+    debug: true,
+  })
+  .getOffers("homepage_hero", 3, {
+    // Options available but batch execution doesn't use them (commands are executed in sequence)
+  })
+  .postEvent("page_view", [InteractParam.string("pageType", "homepage").toNameValuePair()])
+
+const advancedResults = await advancedBatch.execute(null)
+
+// Legacy approach (still supported)
+const audienceArray = [{ n: "VisitorID", v: "12345", t: "string" }]
+const legacyBatch = client
   .createBatch()
   .startSession(
     audienceArray,
@@ -449,7 +475,7 @@ const advancedBatch = client
   .getOffers("homepage_hero", 3)
   .postEvent("page_view")
 
-const advancedResults = await advancedBatch.execute(null)
+const legacyResults = await legacyBatch.execute(null)
 ```
 
 ## TypeScript Support

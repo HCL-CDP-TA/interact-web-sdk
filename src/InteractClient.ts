@@ -721,12 +721,63 @@ export class BatchBuilder {
   }
 
   startSession(
+    audience: AudienceConfig | InteractAudience,
+    options?: {
+      parameters?: NameValuePair[]
+      relyOnExistingSession?: boolean
+      debug?: boolean
+    },
+  ): BatchBuilder
+  startSession(
     audienceID: NameValuePair[],
     audienceLevel: string,
+    parameters?: NameValuePair[],
+    relyOnExistingSession?: boolean,
+    debug?: boolean,
+  ): BatchBuilder
+  startSession(
+    audienceOrArray: AudienceConfig | InteractAudience | NameValuePair[],
+    audienceLevelOrOptions?:
+      | string
+      | {
+          parameters?: NameValuePair[]
+          relyOnExistingSession?: boolean
+          debug?: boolean
+        },
     parameters?: NameValuePair[],
     relyOnExistingSession: boolean = true,
     debug: boolean = false,
   ): BatchBuilder {
+    // Handle new signature with AudienceConfig/InteractAudience
+    if (!Array.isArray(audienceOrArray)) {
+      const audience =
+        audienceOrArray instanceof InteractAudience
+          ? (audienceOrArray as InteractAudience).toAudienceConfig()
+          : (audienceOrArray as AudienceConfig)
+      const options =
+        (audienceLevelOrOptions as {
+          parameters?: NameValuePair[]
+          relyOnExistingSession?: boolean
+          debug?: boolean
+        }) || {}
+
+      const audienceIdArray = this.client["convertAudienceToArray"](audience)
+      this.commands.push({
+        action: "startSession",
+        ic: this.client["config"].interactiveChannel,
+        audienceID: audienceIdArray,
+        audienceLevel: audience.audienceLevel,
+        parameters: options.parameters,
+        relyOnExistingSession: options.relyOnExistingSession ?? true,
+        debug: options.debug ?? false,
+      })
+      return this
+    }
+
+    // Handle legacy signature with NameValuePair[]
+    const audienceID = audienceOrArray as NameValuePair[]
+    const audienceLevel = audienceLevelOrOptions as string
+
     this.commands.push({
       action: "startSession",
       ic: this.client["config"].interactiveChannel,
@@ -739,7 +790,15 @@ export class BatchBuilder {
     return this
   }
 
-  getOffers(interactionPoint: string, numberRequested: number = 1): BatchBuilder {
+  getOffers(
+    interactionPoint: string,
+    numberRequested: number = 1,
+    options?: {
+      sessionId?: string
+      autoManageSession?: boolean
+      audience?: AudienceConfig
+    },
+  ): BatchBuilder {
     this.commands.push({
       action: "getOffers",
       ip: interactionPoint,
@@ -748,7 +807,15 @@ export class BatchBuilder {
     return this
   }
 
-  postEvent(eventName: string, parameters?: NameValuePair[]): BatchBuilder {
+  postEvent(
+    eventName: string,
+    parameters?: NameValuePair[],
+    options?: {
+      sessionId?: string
+      autoManageSession?: boolean
+      audience?: AudienceConfig
+    },
+  ): BatchBuilder {
     this.commands.push({
       action: "postEvent",
       event: eventName,
