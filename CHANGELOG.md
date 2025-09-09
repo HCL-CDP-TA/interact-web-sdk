@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.2](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.4.1...v2.4.2) (2025-09-09)
+
+
+### Bug Fixes
+
+* session stored after batch create session ([9710517](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/9710517f78320a5a25f0ea8f8e7b4d96554c8b44))
+
 ## [2.4.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.4.0...v2.4.1) (2025-09-09)
 
 
