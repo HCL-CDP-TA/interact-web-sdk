@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.4.0...v2.4.1) (2025-09-09)
+
+
+### Bug Fixes
+
+* sssion mgmt on postEvent, clear old withSession methods & add type enum ([ce15edf](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/ce15edfd6773f5816f2ac8baf76298afbfce007c))
+
 ## [2.4.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.3.0...v2.4.0) (2025-09-09)
 
 
