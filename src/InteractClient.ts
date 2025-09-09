@@ -892,6 +892,12 @@ export class BatchBuilder {
         : this.client.getSessionId()
 
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
+    
+    // If batch contains startSession, update client's session ID
+    if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
+      this.client.setSessionId(result.responses[0].sessionId)
+    }
+    
     this.commands = [] // Reset for reuse
     return result
   }
@@ -1074,6 +1080,12 @@ export class ExecutableBatchBuilder {
         : this.client.getSessionId()
 
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
+    
+    // If batch contains startSession, update client's session ID
+    if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
+      this.client.setSessionId(result.responses[0].sessionId)
+    }
+    
     return result
   }
 }

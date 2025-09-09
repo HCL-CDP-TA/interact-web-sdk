@@ -468,6 +468,30 @@ await client.postEvent("product_view", [
 - **No Code Changes**: Existing code continues to work without modification
 - **Audience Persistence**: Stores audience configuration for reliable session recovery
 
+#### Session ID Persistence in Batches
+
+**Important**: When using batch operations with `startSession`, the client's session ID is automatically updated:
+
+```typescript
+// Create client and execute batch with startSession
+const client = new InteractClient({ serverUrl: "..." })
+
+const batchResponse = await client
+  .createBatch()
+  .startSession(audience)
+  .getOffers("homepage", 3)
+  .execute()
+
+// ✅ Client now has the session ID automatically set!
+console.log(client.getSessionId()) // Session ID is available
+
+// You can now use the client elsewhere in your application
+setState({ client }) // Client retains session for future operations
+
+// Same applies to fluent batch API
+await client.executeBatch().startSession(audience) // Client session ID updated automatically
+```
+
 ```typescript
 // Example: Even if session expires between these calls, it's handled automatically
 await client.startSession(audience)
