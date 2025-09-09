@@ -9,7 +9,7 @@ export {
   InteractAudience,
   InteractParam,
 } from "./InteractClient.js"
-export { InteractParamType } from "./InteractClient.js"
+export { InteractParamType, InteractAudienceLevel } from "./InteractClient.js"
 export type {
   InteractConfig,
   AudienceConfig,

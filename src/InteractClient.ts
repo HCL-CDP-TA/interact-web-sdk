@@ -8,6 +8,11 @@ export enum InteractParamType {
   DateTime = "datetime",
 }
 
+export enum InteractAudienceLevel {
+  Visitor = "Visitor",
+  Customer = "Customer",
+}
+
 // Class-based builders for fluent API
 export class InteractParam {
   public readonly name: string
@@ -54,11 +59,11 @@ export class InteractAudience {
 
   // Static factory methods for common audience levels
   static visitor(audienceId: InteractParam): InteractAudience {
-    return new InteractAudience("Visitor", audienceId)
+    return new InteractAudience(InteractAudienceLevel.Visitor, audienceId)
   }
 
   static customer(audienceId: InteractParam): InteractAudience {
-    return new InteractAudience("Customer", audienceId)
+    return new InteractAudience(InteractAudienceLevel.Customer, audienceId)
   }
 
   // Convert to internal format
@@ -79,7 +84,7 @@ export interface InteractConfig {
 }
 
 export interface AudienceConfig {
-  audienceLevel: "Visitor" | "Customer" | string
+  audienceLevel: InteractAudienceLevel | string
   audienceId: {
     name: string
     value: string | number
@@ -238,7 +243,7 @@ export class InteractClient {
   // Helper methods for default audience configurations
   static createVisitorAudience(visitorId: string = "0"): AudienceConfig {
     return {
-      audienceLevel: "Visitor",
+      audienceLevel: InteractAudienceLevel.Visitor,
       audienceId: {
         name: "VisitorID",
         value: visitorId,
@@ -249,7 +254,7 @@ export class InteractClient {
 
   static createCustomerAudience(customerId: number): AudienceConfig {
     return {
-      audienceLevel: "Customer",
+      audienceLevel: InteractAudienceLevel.Customer,
       audienceId: {
         name: "CustomerID",
         value: customerId,
@@ -519,13 +524,19 @@ export class InteractClient {
     let sessionId = explicitSessionId || this.getSessionId()
 
     // Auto-manage session if enabled and no session exists
-    if (!sessionId && autoManageSession && audience) {
-      const sessionResponse = await this.startSession(audience)
-      sessionId = sessionResponse.sessionId || null
+    if (!sessionId && autoManageSession) {
+      // Use provided audience or fall back to stored audience
+      const targetAudience = audience || this.getStoredAudience()
+      if (targetAudience) {
+        const sessionResponse = await this.startSession(targetAudience)
+        sessionId = sessionResponse.sessionId || null
+      }
     }
 
     if (!sessionId) {
-      throw new Error("No session available. Start a session first or provide audience with autoManageSession.")
+      throw new Error(
+        "No session available. Start a session first with startSession(audience) or provide audience parameter.",
+      )
     }
 
     const commands: Command[] = [
@@ -557,13 +568,19 @@ export class InteractClient {
     let sessionId = explicitSessionId || this.getSessionId()
 
     // Auto-manage session if enabled and no session exists
-    if (!sessionId && autoManageSession && audience) {
-      const sessionResponse = await this.startSession(audience)
-      sessionId = sessionResponse.sessionId || null
+    if (!sessionId && autoManageSession) {
+      // Use provided audience or fall back to stored audience
+      const targetAudience = audience || this.getStoredAudience()
+      if (targetAudience) {
+        const sessionResponse = await this.startSession(targetAudience)
+        sessionId = sessionResponse.sessionId || null
+      }
     }
 
     if (!sessionId) {
-      throw new Error("No session available. Start a session first or provide audience with autoManageSession.")
+      throw new Error(
+        "No session available. Start a session first with startSession(audience) or provide audience parameter.",
+      )
     }
 
     const commands: Command[] = [
@@ -636,15 +653,6 @@ export class InteractClient {
     return new BatchBuilder(this)
   }
 
-  // Backward compatibility wrapper for postEventWithSession
-  async postEventWithSession(
-    eventName: string,
-    parameters?: NameValuePair[],
-    audience?: AudienceConfig,
-  ): Promise<InteractResponse> {
-    return this.postEvent(eventName, parameters, { autoManageSession: true, audience })
-  }
-
   // Complete workflow methods
   async getOffersForPage(
     interactionPoint: string,
@@ -684,15 +692,15 @@ export class InteractClient {
   }
 
   // Helper methods
-  static createParameter(name: string, value: any, type: "string" | "numeric" | "datetime" = "string"): NameValuePair {
+  static createParameter(name: string, value: any, type: InteractParamType = InteractParamType.String): NameValuePair {
     return { n: name, v: value, t: type }
   }
 
   static createAudience(
-    audienceLevel: "Visitor" | "Customer" | string,
+    audienceLevel: InteractAudienceLevel | string,
     audienceIdName: string,
     audienceIdValue: string | number,
-    audienceIdType: "string" | "numeric" | "datetime" = "string",
+    audienceIdType: InteractParamType = InteractParamType.String,
   ): AudienceConfig {
     return {
       audienceLevel,
@@ -915,24 +923,58 @@ export class ExecutableBatchBuilder {
     },
   ): ExecutableBatchBuilder
   startSession(
-    audience: AudienceConfig | InteractAudience,
-    sessionId?: string | null,
-    options?: {
-      parameters?: NameValuePair[]
-      relyOnExistingSession?: boolean
-      debug?: boolean
-    },
+    audienceID: NameValuePair[],
+    audienceLevel: string,
+    parameters?: NameValuePair[],
+    relyOnExistingSession?: boolean,
+    debug?: boolean,
+  ): ExecutableBatchBuilder
+  startSession(
+    audienceOrArray: AudienceConfig | InteractAudience | NameValuePair[],
+    sessionIdOrAudienceLevel?: string | null,
+    parametersOrOptions?:
+      | NameValuePair[]
+      | {
+          parameters?: NameValuePair[]
+          relyOnExistingSession?: boolean
+          debug?: boolean
+        },
+    relyOnExistingSession: boolean = true,
+    debug: boolean = false,
   ): ExecutableBatchBuilder {
-    const config = audience instanceof InteractAudience ? audience.toAudienceConfig() : audience
+    // Handle new signature with AudienceConfig/InteractAudience
+    if (!Array.isArray(audienceOrArray)) {
+      const audience =
+        audienceOrArray instanceof InteractAudience
+          ? (audienceOrArray as InteractAudience).toAudienceConfig()
+          : (audienceOrArray as AudienceConfig)
+
+      this.commands.push({
+        action: "startSession",
+        ic: this.interactiveChannel,
+        audienceLevel: audience.audienceLevel,
+        audienceID: [{ n: audience.audienceId.name, v: audience.audienceId.value, t: audience.audienceId.type }],
+        customSessionId: sessionIdOrAudienceLevel,
+        debug: debug,
+        relyOnExistingSession: relyOnExistingSession,
+        parameters: Array.isArray(parametersOrOptions) ? parametersOrOptions : parametersOrOptions?.parameters,
+      })
+      return this
+    }
+
+    // Handle legacy signature with NameValuePair[]
+    const audienceLevel = sessionIdOrAudienceLevel as string
+    const parameters = parametersOrOptions as NameValuePair[]
+
     this.commands.push({
       action: "startSession",
       ic: this.interactiveChannel,
-      audienceLevel: config.audienceLevel,
-      audienceID: [{ n: config.audienceId.name, v: config.audienceId.value, t: config.audienceId.type }],
-      customSessionId: sessionId,
-      debug: options?.debug,
-      relyOnExistingSession: options?.relyOnExistingSession,
-      parameters: options?.parameters,
+      audienceLevel: audienceLevel,
+      audienceID: audienceOrArray as NameValuePair[],
+      customSessionId: undefined,
+      debug: debug,
+      relyOnExistingSession: relyOnExistingSession,
+      parameters: parameters,
     })
     return this
   }
@@ -999,7 +1041,7 @@ export class ExecutableBatchBuilder {
   setAudience(audienceID: NameValuePair[], audienceLevel?: string): ExecutableBatchBuilder {
     this.commands.push({
       action: "setAudience",
-      audienceLevel: audienceLevel || "Visitor",
+      audienceLevel: audienceLevel || InteractAudienceLevel.Visitor,
       audienceID,
     })
     return this

@@ -417,6 +417,26 @@ await client.startSession(audience, "custom-session-456", {
 
 The client automatically manages sessions for you. Just start a session once and use it throughout your workflow:
 
+```typescript
+// Start session with audience once
+const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+await client.startSession(audience)
+
+// All subsequent calls automatically use the stored session AND stored audience
+const offers = await client.getOffers("ProductPage_Sidebar", 2) // ✅ No session/audience needed!
+await client.postEvent("product_view") // ✅ Uses stored session & audience automatically
+
+// Even if session expires, it's automatically recovered using the stored audience
+const moreOffers = await client.getOffers("HomePage_Hero", 3) // ✅ Auto-recovery works!
+```
+
+**Key Benefits:**
+
+- **Stored Session**: Once started, session ID is automatically used
+- **Stored Audience**: Audience is remembered for automatic session recovery
+- **Auto-Recovery**: If session expires, new session is created automatically with stored audience
+- **Zero Configuration**: Just call methods - session management is handled for you
+
 ````typescript
 ### Session Management
 
@@ -789,13 +809,30 @@ The SDK provides static helper methods to simplify common tasks:
 Creates an AudienceConfig object with proper typing:
 
 ```typescript
-// Using the helper method (recommended)
-const audience = InteractClient.createAudience("Visitor", "VisitorID", "0", "string")
+import { InteractClient, InteractAudienceLevel, InteractParamType } from "@interact/sdk"
+
+// Using the helper method with enums (recommended)
+const audience = InteractClient.createAudience(
+  InteractAudienceLevel.Visitor,
+  "VisitorID",
+  "0",
+  InteractParamType.String,
+)
+
+// Type examples:
+const visitorAudience = InteractClient.createAudience(InteractAudienceLevel.Visitor, "VisitorID", "12345")
+
+const customerAudience = InteractClient.createAudience(
+  InteractAudienceLevel.Customer,
+  "CustomerID",
+  987654,
+  InteractParamType.Numeric,
+)
 
 // Equivalent to manually creating:
 const audience = {
-  audienceLevel: "Visitor",
-  audienceId: { name: "VisitorID", value: "0", type: "string" },
+  audienceLevel: InteractAudienceLevel.Visitor,
+  audienceId: { name: "VisitorID", value: "0", type: InteractParamType.String },
 }
 ```
 
@@ -804,22 +841,29 @@ const audience = {
 Creates a NameValuePair for event parameters:
 
 ```typescript
-const param = InteractClient.createParameter("pageURL", "/homepage", "string")
+import { InteractClient, InteractParamType } from "@interact/sdk"
+
+const param = InteractClient.createParameter("pageURL", "/homepage", InteractParamType.String)
 // Returns: { n: "pageURL", v: "/homepage", t: "string" }
+
+// Type examples:
+const stringParam = InteractClient.createParameter("customerID", "12345", InteractParamType.String)
+const numericParam = InteractClient.createParameter("price", "99.99", InteractParamType.Numeric)
+const dateParam = InteractClient.createParameter("purchaseDate", "2024-01-15", InteractParamType.DateTime)
 ```
 
 ### Type-Safe Operations
 
 ```typescript
 interface AudienceConfig {
-  audienceLevel: "Customer" | "Visitor"
+  audienceLevel: InteractAudienceLevel | string
   audienceId: NameValuePair
 }
 
 interface NameValuePair {
   name: string
   value: string
-  type: "string" | "numeric" | "boolean" | "datetime"
+  type: InteractParamType
 }
 ```
 
@@ -842,7 +886,7 @@ try {
 ## Best Practices
 
 1. **Session Management**: Always call `endSession()` when interaction is complete
-2. **Event Tracking**: Use `postEventWithSession()` for automatic session handling
+2. **Event Tracking**: Use `postEvent()` for automatic session handling
 3. **Batch Operations**: Use batch API for multiple operations to reduce network overhead
 4. **Performance**: Monitor SDK metrics to optimize API usage patterns
 5. **Error Handling**: Implement proper try/catch blocks around all SDK calls
