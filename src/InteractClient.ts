@@ -91,6 +91,7 @@ export interface SessionState {
   sessionId: string | null
   isValid: boolean
   lastActivity: Date
+  audience?: AudienceConfig // Store audience for session recovery
 }
 
 export interface InteractMessage {
@@ -162,6 +163,7 @@ export class InteractClient {
     sessionId: null,
     isValid: false,
     lastActivity: new Date(),
+    audience: undefined,
   }
 
   constructor(config: InteractConfig) {
@@ -204,6 +206,21 @@ export class InteractClient {
     this.sessionState.lastActivity = new Date()
   }
 
+  // Set both session and audience for session recovery
+  setSession(sessionId: string | null, audience?: AudienceConfig): void {
+    this.sessionState.sessionId = sessionId
+    this.sessionState.isValid = !!sessionId
+    this.sessionState.lastActivity = new Date()
+    if (audience) {
+      this.sessionState.audience = audience
+    }
+  }
+
+  // Get stored audience for session recovery
+  getStoredAudience(): AudienceConfig | undefined {
+    return this.sessionState.audience
+  }
+
   isSessionValid(): boolean {
     return this.sessionState.isValid && !!this.sessionState.sessionId
   }
@@ -213,6 +230,7 @@ export class InteractClient {
       sessionId: null,
       isValid: false,
       lastActivity: new Date(),
+      audience: undefined,
     }
   }
 
@@ -239,18 +257,40 @@ export class InteractClient {
     }
   }
 
-  // Check if response indicates session is invalid
+  // Check if response indicates session is invalid or expired
   private isSessionInvalid(response: BatchResponse): boolean {
+    // Check batch-level status code
+    if (response.batchStatusCode === 2) {
+      return true
+    }
+
+    // Check individual response status codes and messages
     return (
-      response.responses?.some(
-        r =>
-          r.statusCode === 2 &&
-          r.messages?.some(m => m.msgLevel === 2 && m.msg.toLowerCase().includes("invalid session id")),
-      ) || false
+      response.responses?.some(r => {
+        // Status code 2 typically indicates session issues
+        if (r.statusCode === 2) {
+          // Check for specific session-related error messages
+          return (
+            r.messages?.some(m => {
+              if (m.msgLevel === 2 && m.msgCode === 1) {
+                const msgLower = m.msg.toLowerCase()
+                return (
+                  msgLower.includes("invalid session id") ||
+                  msgLower.includes("session id") ||
+                  msgLower.includes("session expired") ||
+                  msgLower.includes("session timeout")
+                )
+              }
+              return false
+            }) || false
+          )
+        }
+        return false
+      }) || false
     )
   }
 
-  // Execute batch with automatic session retry
+  // Execute batch with automatic session retry and recovery
   async executeBatchWithRetry(
     sessionId: string | null,
     commands: Command[],
@@ -272,31 +312,49 @@ export class InteractClient {
         // Check if session is invalid
         if (this.isSessionInvalid(response) && attempt < maxRetries) {
           if (this.config.enableLogging) {
-            console.warn("Session invalid, retrying with new session...")
+            console.warn("Session expired, recovering with new session and retrying batch...")
           }
 
-          // Clear invalid session
+          // Clear invalid session from client state
           this.clearSession()
 
-          // If we have audience config, start a new session
+          // If we have audience config, recover by prepending startSession to the batch
           if (audience) {
-            const newSessionResponse = await this.startSessionLowLevel(
-              null,
-              this.convertAudienceToArray(audience),
-              audience.audienceLevel,
-            )
+            // Create a new batch with startSession command first, then original commands
+            const recoveryCommands: Command[] = [
+              {
+                action: "startSession",
+                ic: this.config.interactiveChannel,
+                audienceID: this.convertAudienceToArray(audience),
+                audienceLevel: audience.audienceLevel,
+                relyOnExistingSession: false, // Force new session since old one expired
+              },
+              ...commands, // Add original commands after startSession
+            ]
 
-            if (newSessionResponse.sessionId) {
-              currentSessionId = newSessionResponse.sessionId
-              this.setSessionId(currentSessionId)
-
-              // Retry the original commands with new session
-              attempt++
-              continue
+            if (this.config.enableLogging) {
+              console.log("Executing recovery batch with startSession + original commands...")
             }
+
+            // Execute the recovery batch (use the expired sessionId since startSession will create new one)
+            const recoveryResponse = await this.executeBatch(currentSessionId, recoveryCommands)
+
+            // Update session ID from the startSession response
+            if (recoveryResponse.responses?.[0]?.sessionId) {
+              const newSessionId = recoveryResponse.responses[0].sessionId
+              // Store both session and audience for future recovery
+              this.setSession(newSessionId, audience)
+
+              if (this.config.enableLogging) {
+                console.log(`Session recovered: ${currentSessionId} -> ${newSessionId}`)
+              }
+            }
+
+            // Return the recovery response (which includes results from all commands)
+            return recoveryResponse
           }
 
-          throw new Error("Failed to establish new session after invalid session")
+          throw new Error("Cannot recover session: no audience configuration provided")
         }
 
         return response
@@ -438,90 +496,52 @@ export class InteractClient {
     )
 
     if (response.sessionId) {
-      this.setSessionId(response.sessionId)
+      // Store both session and audience for session recovery
+      this.setSession(response.sessionId, audienceConfig)
     }
 
     return response
   }
 
-  // Method overloads for getOffers - provides multiple call signatures
-  async getOffers(sessionId: string, interactionPoint: string, numberRequested?: number): Promise<InteractResponse>
+  // Get offers with automatic session management
   async getOffers(
     interactionPoint: string,
-    numberRequested?: number,
+    numberRequested: number = 1,
     options?: {
       sessionId?: string
       autoManageSession?: boolean
       audience?: AudienceConfig
     },
-  ): Promise<InteractResponse>
-
-  // Implementation handles both signatures
-  async getOffers(
-    sessionIdOrInteractionPoint: string,
-    interactionPointOrNumberRequested?: string | number,
-    numberRequestedOrOptions?:
-      | number
-      | {
-          sessionId?: string
-          autoManageSession?: boolean
-          audience?: AudienceConfig
-        },
   ): Promise<InteractResponse> {
-    // Determine which signature was used
-    const isLegacySignature = typeof interactionPointOrNumberRequested === "string"
+    const { sessionId: explicitSessionId, autoManageSession = true, audience } = options || {}
 
-    if (isLegacySignature) {
-      // Legacy signature: getOffers(sessionId, interactionPoint, numberRequested?)
-      const sessionId = sessionIdOrInteractionPoint
-      const interactionPoint = interactionPointOrNumberRequested as string
-      const numberRequested = (numberRequestedOrOptions as number) || 1
+    let sessionId = explicitSessionId || this.getSessionId()
 
-      const commands: Command[] = [
-        {
-          action: "getOffers",
-          ip: interactionPoint,
-          numberRequested,
-        },
-      ]
-
-      const batchResponse = await this.executeBatch(sessionId, commands)
-      return this.extractFirstResponse(batchResponse)
-    } else {
-      // New signature: getOffers(interactionPoint, numberRequested?, options?)
-      const interactionPoint = sessionIdOrInteractionPoint
-      const numberRequested = (interactionPointOrNumberRequested as number) || 1
-      const options = (numberRequestedOrOptions as any) || {}
-
-      let sessionId = options.sessionId || this.getSessionId()
-
-      // If no session and autoManageSession is true (default), start one
-      if (!sessionId && options.autoManageSession !== false && options.audience) {
-        const sessionResponse = await this.startSession(options.audience)
-        sessionId = sessionResponse.sessionId || null
-      }
-
-      if (!sessionId) {
-        throw new Error(
-          "No session available. Provide sessionId, existing session, or audience with autoManageSession.",
-        )
-      }
-
-      const commands: Command[] = [
-        {
-          action: "getOffers",
-          ip: interactionPoint,
-          numberRequested,
-        },
-      ]
-
-      const batchResponse = await this.executeBatchWithRetry(sessionId, commands, options.audience)
-      return this.extractFirstResponse(batchResponse)
+    // Auto-manage session if enabled and no session exists
+    if (!sessionId && autoManageSession && audience) {
+      const sessionResponse = await this.startSession(audience)
+      sessionId = sessionResponse.sessionId || null
     }
+
+    if (!sessionId) {
+      throw new Error("No session available. Start a session first or provide audience with autoManageSession.")
+    }
+
+    const commands: Command[] = [
+      {
+        action: "getOffers",
+        ip: interactionPoint,
+        numberRequested,
+      },
+    ]
+
+    // Use provided audience or fall back to stored audience for session recovery
+    const recoveryAudience = audience || this.getStoredAudience()
+    const batchResponse = await this.executeBatchWithRetry(sessionId, commands, recoveryAudience)
+    return this.extractFirstResponse(batchResponse)
   }
 
-  // Method overloads for postEvent - provides multiple call signatures
-  async postEvent(sessionId: string, eventName: string, parameters?: NameValuePair[]): Promise<InteractResponse>
+  // Post event with automatic session management
   async postEvent(
     eventName: string,
     parameters?: NameValuePair[],
@@ -530,94 +550,33 @@ export class InteractClient {
       autoManageSession?: boolean
       audience?: AudienceConfig
     },
-  ): Promise<InteractResponse>
-
-  // Implementation handles both signatures
-  async postEvent(
-    sessionIdOrEventName: string,
-    eventNameOrParameters?: string | NameValuePair[],
-    parametersOrOptions?:
-      | NameValuePair[]
-      | {
-          sessionId?: string
-          autoManageSession?: boolean
-          audience?: AudienceConfig
-        },
   ): Promise<InteractResponse> {
-    // Detect which overload was called based on parameter types
-    if (typeof eventNameOrParameters === "string") {
-      // Old signature: postEvent(sessionId, eventName, parameters?)
-      const sessionId = sessionIdOrEventName
-      const eventName = eventNameOrParameters
-      const parameters = parametersOrOptions as NameValuePair[] | undefined
+    const { sessionId: explicitSessionId, autoManageSession = true, audience } = options || {}
 
-      const commands: Command[] = [
-        {
-          action: "postEvent",
-          event: eventName,
-          parameters,
-        },
-      ]
+    let sessionId = explicitSessionId || this.getSessionId()
 
-      const batchResponse = await this.executeBatch(sessionId, commands)
-      return this.extractFirstResponse(batchResponse)
-    } else {
-      // New signature: postEvent(eventName, parameters?, options?)
-      const eventName = sessionIdOrEventName
-      const parameters = eventNameOrParameters as NameValuePair[] | undefined
-      const options = parametersOrOptions as
-        | {
-            sessionId?: string
-            autoManageSession?: boolean
-            audience?: AudienceConfig
-          }
-        | undefined
-
-      const { sessionId: explicitSessionId, autoManageSession = false, audience } = options || {}
-
-      let sessionId: string | undefined = explicitSessionId
-
-      if (!sessionId) {
-        if (autoManageSession) {
-          // Auto-managed session mode
-          sessionId = this.getSessionId() || undefined
-
-          if (!sessionId && audience) {
-            const sessionResponse = await this.startSession(audience)
-            sessionId = sessionResponse.sessionId || undefined
-          }
-
-          if (!sessionId) {
-            throw new Error("No session available and no audience provided to start new session")
-          }
-
-          const commands: Command[] = [
-            {
-              action: "postEvent",
-              event: eventName,
-              parameters,
-            },
-          ]
-
-          const batchResponse = await this.executeBatchWithRetry(sessionId, commands, audience)
-          return this.extractFirstResponse(batchResponse)
-        } else {
-          throw new Error("No sessionId provided and autoManageSession not enabled")
-        }
-      }
-
-      // Manual session mode
-      const commands: Command[] = [
-        {
-          action: "postEvent",
-          event: eventName,
-          parameters,
-        },
-      ]
-
-      const batchResponse = await this.executeBatch(sessionId, commands)
-      return this.extractFirstResponse(batchResponse)
+    // Auto-manage session if enabled and no session exists
+    if (!sessionId && autoManageSession && audience) {
+      const sessionResponse = await this.startSession(audience)
+      sessionId = sessionResponse.sessionId || null
     }
+
+    if (!sessionId) {
+      throw new Error("No session available. Start a session first or provide audience with autoManageSession.")
+    }
+
+    const commands: Command[] = [
+      {
+        action: "postEvent",
+        event: eventName,
+        parameters,
+      },
+    ]
+
+    // Use provided audience or fall back to stored audience for session recovery
+    const recoveryAudience = audience || this.getStoredAudience()
+    const batchResponse = await this.executeBatchWithRetry(sessionId, commands, recoveryAudience)
+    return this.extractFirstResponse(batchResponse)
   }
 
   async getVersion(): Promise<InteractResponse> {

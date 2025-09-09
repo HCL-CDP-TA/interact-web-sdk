@@ -73,14 +73,14 @@ The SDK is fully compatible with vanilla JavaScript and can be used directly in 
           // Option 1: Manual audience creation
           const audience = {
             audienceLevel: "Visitor",
-            audienceId: { name: "VisitorID", value: "12345", type: "string" },
+            audienceId: { name: "VisitorID", value: "0", type: "string" },
           }
 
           // Option 2: Helper method
-          const audienceHelper = InteractClient.createAudience("Visitor", "VisitorID", "12345", "string")
+          const audienceHelper = InteractClient.createAudience("Visitor", "VisitorID", "0", "string")
 
           // Option 3: Class-based fluent API (recommended)
-          const audienceFluent = new InteractAudience("Visitor", InteractParam.string("VisitorID", "12345"))
+          const audienceFluent = new InteractAudience("Visitor", InteractParam.string("VisitorID", "0"))
 
           const sessionResponse = await client.startSession(audienceFluent)
           console.log("Session started:", sessionResponse.sessionId)
@@ -133,7 +133,7 @@ For maximum compatibility, you can use the IIFE (Immediately Invoked Function Ex
       async function demo() {
         try {
           // Using helper method for cleaner code
-          const audience = HCLInteractSDK.InteractClient.createAudience("Visitor", "VisitorID", "12345")
+          const audience = HCLInteractSDK.InteractClient.createAudience("Visitor", "VisitorID", "0")
 
           const sessionResponse = await client.startSession(audience)
           console.log("Session:", sessionResponse.sessionId)
@@ -187,7 +187,7 @@ See the complete working example at [`vanilla-example.html`](../vanilla-example.
 ## Quick Start
 
 ```typescript
-import { InteractClient } from "@hcl-cdp-ta/interact-sdk"
+import { InteractClient, InteractAudience, InteractParam } from "@hcl-cdp-ta/interact-sdk"
 
 // Initialize client
 const client = new InteractClient({
@@ -195,47 +195,15 @@ const client = new InteractClient({
   interactiveChannel: "web",
 })
 
-// Start session with audience
-const audience = {
-  audienceLevel: "Visitor",
-  audienceId: {
-    name: "VisitorID",
-    value: "12345",
-    type: "string",
-  },
-}
+// Define audience using fluent builders
+const audience = InteractAudience.visitor(InteractParam.string("VisitorID", "0"))
 
-// Start session (optionally with custom sessionId)
-const response = await client.startSession(audience)
-const sessionId = response.sessionId
+// Start session and get offers (client manages session automatically)
+const sessionResponse = await client.startSession(audience)
+const offersResponse = await client.getOffers("HomePage_Hero", 3)
 
-// Set additional audience data
-await client.setAudience(sessionId, audience.audienceLevel, [
-  { name: "CustomerType", value: "Premium", type: "string" },
-])
-
-// Get offers
-const offers = await client.getOffers(sessionId, "homepage_hero", 3)
-
-// Track events - multiple ways to use the unified postEvent method
-
-// Method 1: Explicit session ID (backward compatible)
-await client.postEvent(sessionId, "page_view")
-
-// Method 2: Auto session management
-await client.postEvent("Contact", [{ n: "UACIOfferTrackingCode", v: "OFFER123", t: "string" }], {
-  autoManageSession: true,
-  audience,
-})
-
-// Method 3: Use existing session automatically
-await client.postEvent("page_view") // Uses current session
-
-// Method 4: Legacy method (still supported)
-await client.postEventWithSession("Contact", [{ n: "UACIOfferTrackingCode", v: "OFFER123", t: "string" }])
-
-// End session
-await client.endSession(sessionId)
+// Track user events (uses existing session)
+await client.postEvent("page_view")
 ```
 
 ## Core Classes
@@ -275,17 +243,21 @@ Efficient batch operations for complex workflows and performance optimization.
 
 ### Offers & Content
 
-- `getOffers(sessionId, interactionPoint, count)` - Retrieve personalized offers
-- `getProfile(sessionId)` - Get customer profile data
+- `getOffers(interactionPoint, numberRequested?, options?)` - Retrieve offers with automatic session management
+  - `interactionPoint` - The interaction point name
+  - `numberRequested` - Number of offers to request (default: 1)
+  - `options.sessionId` - Override stored session with explicit session ID
+  - `options.autoManageSession` - Auto-manage session if no sessionId provided (default: true)
+  - `options.audience` - Audience for auto session creation
 
 ### Event Tracking
 
-- `postEvent(sessionId, eventName, parameters?)` - Track events with explicit session ID
-- `postEvent(eventName, parameters?, options?)` - Unified event tracking with flexible session management
-  - `options.sessionId` - Explicit session ID to use
-  - `options.autoManageSession` - Auto-manage session if no sessionId provided
+- `postEvent(eventName, parameters?, options?)` - Track events with automatic session management
+  - `eventName` - Name of the event to track
+  - `parameters` - Optional event parameters as NameValuePair array
+  - `options.sessionId` - Override stored session with explicit session ID
+  - `options.autoManageSession` - Auto-manage session if no sessionId provided (default: true)
   - `options.audience` - Audience for auto session creation
-- `postEventWithSession(eventName, parameters?, audience?)` - Legacy auto-session method (still supported)
 
 ### Batch Operations
 
@@ -331,6 +303,113 @@ await client.startSession(audience, "custom-session-456", {
 })
 ```
 
+### Automatic Session Management
+
+The client automatically manages sessions for you. Just start a session once and use it throughout your workflow:
+
+````typescript
+### Session Management
+
+The client automatically manages sessions for you, including **automatic session recovery** when sessions expire:
+
+```typescript
+// Start session with audience
+const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+await client.startSession(audience)
+
+// All subsequent calls use the established session automatically
+const offers = await client.getOffers("ProductPage_Sidebar", 2)
+await client.postEvent("product_view", [
+  InteractParam.string("ProductID", "ABC123").toNameValuePair()
+])
+
+// If the session expires on the server, the SDK automatically:
+// 1. Detects the session expiration error
+// 2. Creates a new session with the same audience
+// 3. Retries the original operation seamlessly
+// This all happens transparently - your code doesn't need to handle it!
+````
+
+#### Session Recovery Features
+
+- **Automatic Detection**: Recognizes server responses indicating session expiration
+- **Seamless Recovery**: Automatically starts new session with the stored audience
+- **Batch Recovery**: If session expires, prepends `startSession` to the batch and retries
+- **No Code Changes**: Existing code continues to work without modification
+- **Audience Persistence**: Stores audience configuration for reliable session recovery
+
+```typescript
+// Example: Even if session expires between these calls, it's handled automatically
+await client.startSession(audience)
+
+// ... time passes, session expires on server ...
+
+// This call will automatically detect expiration, recover session, and succeed
+const offers = await client.getOffers("HomePage_Hero", 3)
+```
+
+### Advanced Session Management
+
+For advanced scenarios, you still have full control:
+
+```typescript
+// Check current session
+console.log("Current session:", client.getSessionId())
+
+// Get stored audience for recovery
+console.log("Stored audience:", client.getStoredAudience())
+
+// Advanced options for session management
+await client.getOffers("HomePage_Hero", 3, {
+  autoManageSession: true, // Auto-start session if needed
+  audience: myAudience, // Audience for auto-session creation
+})
+
+await client.postEvent("purchase", parameters, {
+  sessionId: "custom-session-id", // Override stored session
+  autoManageSession: true, // Or auto-manage session
+  audience: myAudience,
+})
+
+// End session manually (optional - server will timeout eventually)
+await client.endSession(client.getSessionId())
+
+// Clear session state from client
+client.clearSession()
+```
+
+#### Session Expiration Handling
+
+The SDK automatically handles session expiration responses like this:
+
+```json
+{
+  "batchStatusCode": 2,
+  "responses": [
+    {
+      "statusCode": 2,
+      "messages": [
+        {
+          "msg": "GetOffer request received an invalid session id: ee9d003d-21ff-46a8-a78b-67d190281f31",
+          "msgLevel": 2,
+          "msgCode": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+When this occurs, the SDK:
+
+1. **Detects** the session expiration error
+2. **Creates** a new session using the stored audience
+3. **Prepends** a `startSession` command to the original batch
+4. **Retries** the entire operation seamlessly
+5. **Updates** the stored session ID for future calls
+
+````
+
 ### Audience Management
 
 ```typescript
@@ -341,12 +420,12 @@ await client.setAudience(sessionId, "Customer", [
   { name: "PremiumMember", value: "true", type: "boolean" },
   { name: "LastLogin", value: "2025-09-03T10:30:00Z", type: "datetime" },
 ])
-```
+````
 
 ### Batch Operations Example
 
 ```typescript
-const audienceArray = [{ n: "VisitorID", v: "12345", t: "string" }]
+const audienceArray = [{ n: "VisitorID", v: "0", t: "string" }]
 
 // Basic batch
 const batch = client
@@ -473,28 +552,6 @@ useEffect(() => {
 }, [offer.treatmentCode])
 ```
 
-## Demo Application
-
-Complete working demo at `interact-sdk-test/` featuring:
-
-- **Configuration Management**: Dynamic server and channel setup
-- **Session Workflow**: Start session → Set audience → Get offers → Track events
-- **Batch Operations**: Efficient multi-step API operations
-- **Offer Display**: Production-ready offer cards with interaction tracking
-- **Performance Monitoring**: Real-time SDK metrics and response times
-- **Error Handling**: Comprehensive error display and logging
-- **TypeScript Integration**: Full type safety throughout
-
-### Running the Demo
-
-```bash
-cd interact-sdk-test/
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to explore all SDK features.
-
 ## Architecture
 
 ### Clean Servlet-Based Design
@@ -516,10 +573,10 @@ Type-safe, modern approach with IntelliSense support:
 import { InteractClient, InteractAudience, InteractParam } from "@hcl-cdp-ta/interact-sdk"
 
 // Create audience with fluent API
-const audience = new InteractAudience("Visitor", InteractParam.string("VisitorID", "12345"))
+const audience = new InteractAudience("Visitor", InteractParam.string("VisitorID", "0"))
 
 // Alternative factory methods
-const visitorAudience = InteractAudience.visitor(InteractParam.string("VisitorID", "12345"))
+const visitorAudience = InteractAudience.visitor(InteractParam.string("VisitorID", "0"))
 const customerAudience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
 
 // Start session
@@ -531,7 +588,7 @@ await client.startSession(audience)
 Simple functions for quick setup:
 
 ```typescript
-const audience = InteractClient.createAudience("Visitor", "VisitorID", "12345", "string")
+const audience = InteractClient.createAudience("Visitor", "VisitorID", "0", "string")
 await client.startSession(audience)
 ```
 
@@ -542,7 +599,7 @@ Direct object creation for maximum control:
 ```typescript
 const audience = {
   audienceLevel: "Visitor",
-  audienceId: { name: "VisitorID", value: "12345", type: "string" },
+  audienceId: { name: "VisitorID", value: "0", type: "string" },
 }
 await client.startSession(audience)
 ```
@@ -557,12 +614,12 @@ Creates an AudienceConfig object with proper typing:
 
 ```typescript
 // Using the helper method (recommended)
-const audience = InteractClient.createAudience("Visitor", "VisitorID", "12345", "string")
+const audience = InteractClient.createAudience("Visitor", "VisitorID", "0", "string")
 
 // Equivalent to manually creating:
 const audience = {
   audienceLevel: "Visitor",
-  audienceId: { name: "VisitorID", value: "12345", type: "string" },
+  audienceId: { name: "VisitorID", value: "0", type: "string" },
 }
 ```
 
