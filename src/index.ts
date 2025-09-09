@@ -2,7 +2,13 @@
 // Framework-agnostic TypeScript SDK for HCL Interact
 
 // Core client (recommended)
-export { InteractClient, BatchBuilder, InteractAudience, InteractParam } from "./InteractClient.js"
+export {
+  InteractClient,
+  BatchBuilder,
+  ExecutableBatchBuilder,
+  InteractAudience,
+  InteractParam,
+} from "./InteractClient.js"
 export { InteractParamType } from "./InteractClient.js"
 export type {
   InteractConfig,

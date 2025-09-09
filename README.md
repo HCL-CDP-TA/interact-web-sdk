@@ -261,9 +261,46 @@ Efficient batch operations for complex workflows and performance optimization.
 
 ### Batch Operations
 
+#### Traditional Batch API
+
+For complex workflows requiring multiple operations with shared setup:
+
 - `createBatch()` - Create batch builder for multiple operations
 - Execute multiple API calls in a single request for optimal performance
 - **Note**: Batch operations execute commands sequentially on the server. Session management options in individual batch commands are for API consistency but don't affect execution (the batch executes with the sessionId passed to `execute()`)
+
+```typescript
+// Create batch builder, configure multiple operations, then execute
+const batch = client.createBatch().startSession(audience).getOffers("homepage_hero", 3).postEvent("page_view")
+
+const results = await batch.execute() // Explicit execution step
+```
+
+#### One-Line Batch API (New!)
+
+For simple batch operations, use the fluent one-line API:
+
+- `executeBatch(sessionId?)` - Create auto-executing batch builder
+- **Terminal methods**: `getOffers()`, `postEvent()`, `endSession()` auto-execute and return `Promise<BatchResponse>`
+- **Builder methods**: `startSession()`, `setAudience()` continue the chain
+
+```typescript
+// Execute immediately when chain completes - no separate execute() call needed!
+const results = await client.executeBatch().startSession(audience).getOffers("homepage_hero", 3) // Auto-executes and returns Promise<BatchResponse>
+
+// Even simpler - just get offers with automatic session management
+const offers = await client.executeBatch().getOffers("homepage_hero", 3)
+
+// Post an event in one line
+const eventResult = await client
+  .executeBatch()
+  .postEvent("page_view", [InteractClient.createParameter("pageType", "homepage")])
+```
+
+**API Comparison:**
+
+- **Traditional**: Build → Execute (two steps, complex workflows)
+- **One-line**: Auto-execute on terminal methods (one step, simple operations)
 
 #### Batch Builder Methods
 
@@ -302,18 +339,39 @@ await batch.execute(null)
 
 #### Session ID Handling in Batches
 
-- **Batch Session ID**: Passed to `execute(sessionId)` - used for all commands in the batch
-- **StartSession Custom ID**: If `startSession()` specifies a custom session ID, it takes precedence
-- **Priority**: Custom session ID in `startSession()` > session ID passed to `execute()`
+**Automatic Session Management** (Recommended):
 
 ```typescript
-// Custom session ID in startSession takes precedence
+// Start session once
+await client.startSession(audience)
+
+// All batches automatically use the managed session
+const batch = client.createBatch().getOffers("homepage", 3).postEvent("page_view")
+const results = await batch.execute() // No session ID needed!
+```
+
+**Session ID Priority** (when multiple sources exist):
+
+1. **Custom session ID in `startSession()`** - highest priority
+2. **Explicit session ID passed to `execute(sessionId)`** - manual override
+3. **Client's managed session ID** - automatic default (most common)
+
+```typescript
+// Example showing all priority levels
+await client.startSession(audience) // Managed session: "auto-session-456"
+
 const batch = client
   .createBatch()
-  .startSession(audience, "custom-123") // This session ID is used
+  .startSession(audience, "custom-123") // Priority 1: Custom session ID
   .getOffers("homepage", 3)
 
-await batch.execute("ignored-session-id") // "custom-123" is used instead
+await batch.execute("override-789") // Priority 2: Explicit override (ignored in this case)
+// Result: "custom-123" is used (highest priority)
+
+// Without startSession in batch
+const simpleBatch = client.createBatch().getOffers("homepage", 3)
+await simpleBatch.execute("override-789") // Priority 2: Explicit override used
+await simpleBatch.execute() // Priority 3: Managed session "auto-session-456" used
 ```
 
 ## Advanced Features
@@ -477,15 +535,57 @@ await client.setAudience(sessionId, "Customer", [
 ### Batch Operations Example
 
 ```typescript
-// Modern approach with fluent API
 const audience = InteractAudience.visitor(InteractParam.string("VisitorID", "0"))
 
-// Basic batch with automatic session management
-const batch = client.createBatch().startSession(audience).getOffers("homepage_hero", 3).postEvent("page_view")
+// === ONE-LINE BATCH API (New!) ===
+// Perfect for simple operations - auto-executes when terminal method is called
 
-const results = await batch.execute(null)
+// Simple one-line operations with automatic session management
+await client.startSession(audience) // Start session once
 
-// Batch with enhanced options
+const offers = await client.executeBatch().getOffers("homepage_hero", 3)
+const eventResult = await client.executeBatch().postEvent("page_view")
+
+// Chain with session creation in one line
+const sessionAndOffers = await client.executeBatch().startSession(audience).getOffers("homepage_hero", 3) // Auto-executes here
+
+// === TRADITIONAL BATCH API ===
+// Best for complex workflows with multiple operations
+
+// Create batch builder, configure multiple operations, then execute
+const batch = client.createBatch().getOffers("homepage_hero", 3).postEvent("page_view")
+
+const results = await batch.execute() // Explicit execution step
+
+// Access individual operation results from the batch
+console.log("Batch status:", results.batchStatusCode) // Overall batch status
+console.log("Number of responses:", results.responses.length) // Should be 2 (getOffers, postEvent)
+
+// The responses array corresponds to the order of operations in your batch:
+// [0] = getOffers response
+// [1] = postEvent response
+
+const offersResponse = results.responses[0] // getOffers result
+const eventResponse = results.responses[1] // postEvent result
+
+// Access offers from the getOffers response
+if (offersResponse.offerLists && offersResponse.offerLists.length > 0) {
+  const offers = offersResponse.offerLists[0].offers || []
+  console.log(`Received ${offers.length} offers:`)
+
+  offers.forEach((offer, index) => {
+    console.log(`  ${index + 1}. ${offer.n} (${offer.treatmentCode})`)
+  })
+} else {
+  console.log("No offers received")
+} // Check for any errors in individual responses
+results.responses.forEach((response, index) => {
+  if (response.statusCode !== 0) {
+    console.error(`Response ${index} had error:`, response.messages)
+  }
+})
+
+// Batch with session creation and enhanced options
 const advancedBatch = client
   .createBatch()
   .startSession(audience, null, {
@@ -496,7 +596,7 @@ const advancedBatch = client
   .getOffers("homepage_hero", 3)
   .postEvent("page_view", [InteractClient.createParameter("pageType", "homepage")])
 
-const advancedResults = await advancedBatch.execute(null)
+const advancedResults = await advancedBatch.execute() // startSession creates the session automatically
 
 // Using custom session ID in batch startSession
 const customSessionBatch = client
@@ -505,13 +605,27 @@ const customSessionBatch = client
   .getOffers("homepage_hero", 3)
   .postEvent("page_view")
 
-// When startSession has custom session ID, it takes precedence over execute() parameter
-const customResults = await customSessionBatch.execute(null)
+// When startSession has custom session ID, it's used automatically
+const customResults = await customSessionBatch.execute() // Custom session ID from startSession is used
 
-// Using existing session (no startSession needed)
+// Using existing managed session (no startSession needed)
 const existingSessionBatch = client.createBatch().getOffers("homepage_hero", 3).postEvent("page_view")
 
-const existingResults = await existingSessionBatch.execute("existing-session-id")
+const existingResults = await existingSessionBatch.execute() // Uses client's managed session automatically
+
+// Override with explicit session ID (when needed)
+const overrideResults = await existingSessionBatch.execute("specific-session-id") // Explicit override
+
+// Quick access patterns for batch results
+const quickBatch = client.createBatch().getOffers("homepage_hero", 3).postEvent("page_view")
+const quickResults = await quickBatch.execute() // Uses managed session automatically
+
+// Direct access to offers (when getOffers is the first operation)
+const offers = quickResults.responses[0]?.offerLists?.[0]?.offers || []
+console.log(
+  "Quick access offers:",
+  offers.map(offer => offer.treatmentCode),
+)
 ```
 
 ## TypeScript Support

@@ -303,7 +303,7 @@ export class InteractClient {
 
     while (attempt <= maxRetries) {
       try {
-        const response = await this.executeBatch(currentSessionId, commands)
+        const response = await this._executeBatch(currentSessionId, commands)
 
         // Update session ID if returned
         if (response.responses?.[0]?.sessionId) {
@@ -338,7 +338,7 @@ export class InteractClient {
             }
 
             // Execute the recovery batch (use the expired sessionId since startSession will create new one)
-            const recoveryResponse = await this.executeBatch(currentSessionId, recoveryCommands)
+            const recoveryResponse = await this._executeBatch(currentSessionId, recoveryCommands)
 
             // Update session ID from the startSession response
             if (recoveryResponse.responses?.[0]?.sessionId) {
@@ -371,7 +371,7 @@ export class InteractClient {
   }
 
   // Core batch execution - the main method for all API calls
-  async executeBatch(sessionId: string | null, commands: Command[]): Promise<BatchResponse> {
+  async _executeBatch(sessionId: string | null, commands: Command[]): Promise<BatchResponse> {
     const url = `${this.config.serverUrl}/servlet/RestServlet`
 
     const headers: Record<string, string> = {
@@ -455,7 +455,7 @@ export class InteractClient {
       },
     ]
 
-    const batchResponse = await this.executeBatch(sessionId, commands)
+    const batchResponse = await this._executeBatch(sessionId, commands)
     return this.extractFirstResponse(batchResponse)
   }
 
@@ -587,7 +587,7 @@ export class InteractClient {
       },
     ]
 
-    const batchResponse = await this.executeBatch(null, commands)
+    const batchResponse = await this._executeBatch(null, commands)
     return this.extractFirstResponse(batchResponse)
   }
 
@@ -598,7 +598,7 @@ export class InteractClient {
       },
     ]
 
-    const batchResponse = await this.executeBatch(sessionId, commands)
+    const batchResponse = await this._executeBatch(sessionId, commands)
     return this.extractFirstResponse(batchResponse)
   }
 
@@ -611,7 +611,7 @@ export class InteractClient {
       },
     ]
 
-    const batchResponse = await this.executeBatch(sessionId, commands)
+    const batchResponse = await this._executeBatch(sessionId, commands)
     const response = this.extractFirstResponse(batchResponse)
 
     // Update the current session ID if the command was successful
@@ -702,6 +702,11 @@ export class InteractClient {
         type: audienceIdType,
       },
     }
+  }
+
+  // One-line batch execution with fluent API
+  executeBatch(sessionId?: string | null): ExecutableBatchBuilder {
+    return new ExecutableBatchBuilder(this, sessionId, this.config.interactiveChannel)
   }
 
   private extractFirstResponse(batchResponse: BatchResponse): InteractResponse {
@@ -864,17 +869,169 @@ export class BatchBuilder {
     return this.setAudience(audienceIdArray, audienceLevel)
   }
 
-  async execute(sessionId: string | null): Promise<BatchResponse> {
-    // Handle special case: if first command is startSession with customSessionId, use that instead
+  async execute(sessionId?: string | null): Promise<BatchResponse> {
+    // Handle session ID precedence:
+    // 1. If first command is startSession with customSessionId, use that
+    // 2. If sessionId parameter provided, use that
+    // 3. Otherwise, use the client's managed session ID
     const effectiveSessionId =
       this.commands.length > 0 &&
       this.commands[0].action === "startSession" &&
       this.commands[0].customSessionId !== undefined
         ? this.commands[0].customSessionId
-        : sessionId
+        : sessionId !== undefined
+        ? sessionId
+        : this.client.getSessionId()
 
-    const result = await this.client.executeBatch(effectiveSessionId, this.commands)
+    const result = await this.client._executeBatch(effectiveSessionId, this.commands)
     this.commands = [] // Reset for reuse
+    return result
+  }
+}
+
+// Auto-executing batch builder for one-line batch operations
+export class ExecutableBatchBuilder {
+  private client: InteractClient
+  private commands: Command[] = []
+  private sessionId?: string | null
+  private interactiveChannel: string
+
+  constructor(client: InteractClient, sessionId?: string | null, interactiveChannel?: string) {
+    this.client = client
+    this.sessionId = sessionId
+    this.interactiveChannel = interactiveChannel || "_RealTimePersonalization_"
+  }
+
+  // Method overloads for startSession (matching main client)
+  startSession(audience: AudienceConfig, sessionId?: string | null): ExecutableBatchBuilder
+  startSession(audience: InteractAudience, sessionId?: string | null): ExecutableBatchBuilder
+  startSession(
+    audience: AudienceConfig | InteractAudience,
+    sessionId?: string | null,
+    options?: {
+      parameters?: NameValuePair[]
+      relyOnExistingSession?: boolean
+      debug?: boolean
+    },
+  ): ExecutableBatchBuilder
+  startSession(
+    audience: AudienceConfig | InteractAudience,
+    sessionId?: string | null,
+    options?: {
+      parameters?: NameValuePair[]
+      relyOnExistingSession?: boolean
+      debug?: boolean
+    },
+  ): ExecutableBatchBuilder {
+    const config = audience instanceof InteractAudience ? audience.toAudienceConfig() : audience
+    this.commands.push({
+      action: "startSession",
+      ic: this.interactiveChannel,
+      audienceLevel: config.audienceLevel,
+      audienceID: [{ n: config.audienceId.name, v: config.audienceId.value, t: config.audienceId.type }],
+      customSessionId: sessionId,
+      debug: options?.debug,
+      relyOnExistingSession: options?.relyOnExistingSession,
+      parameters: options?.parameters,
+    })
+    return this
+  }
+
+  // Method overloads for getOffers (matching main client)
+  getOffers(interactionPoint: string): Promise<BatchResponse>
+  getOffers(interactionPoint: string, numberRequested?: number): Promise<BatchResponse>
+  getOffers(
+    interactionPoint: string,
+    numberRequested?: number,
+    options?: {
+      sessionId?: string | null
+      autoManageSession?: boolean
+      audience?: AudienceConfig | InteractAudience
+    },
+  ): Promise<BatchResponse>
+  getOffers(
+    interactionPoint: string,
+    numberRequested: number = 1,
+    options?: {
+      sessionId?: string | null
+      autoManageSession?: boolean
+      audience?: AudienceConfig | InteractAudience
+    },
+  ): Promise<BatchResponse> {
+    this.commands.push({
+      action: "getOffers",
+      ip: interactionPoint,
+      numberRequested,
+      parameters: options?.sessionId ? [{ n: "sessionId", v: options.sessionId, t: "string" }] : undefined,
+    })
+    return this.execute()
+  }
+
+  // Method overloads for postEvent (matching main client)
+  postEvent(eventName: string): Promise<BatchResponse>
+  postEvent(eventName: string, parameters?: NameValuePair[]): Promise<BatchResponse>
+  postEvent(
+    eventName: string,
+    parameters?: NameValuePair[],
+    options?: {
+      sessionId?: string | null
+      autoManageSession?: boolean
+      audience?: AudienceConfig | InteractAudience
+    },
+  ): Promise<BatchResponse>
+  postEvent(
+    eventName: string,
+    parameters?: NameValuePair[],
+    options?: {
+      sessionId?: string | null
+      autoManageSession?: boolean
+      audience?: AudienceConfig | InteractAudience
+    },
+  ): Promise<BatchResponse> {
+    this.commands.push({
+      action: "postEvent",
+      event: eventName,
+      parameters,
+    })
+    return this.execute()
+  }
+
+  setAudience(audienceID: NameValuePair[], audienceLevel?: string): ExecutableBatchBuilder {
+    this.commands.push({
+      action: "setAudience",
+      audienceLevel: audienceLevel || "Visitor",
+      audienceID,
+    })
+    return this
+  }
+
+  setAudienceFromConfig(audience: AudienceConfig | InteractAudience, audienceLevel?: string): ExecutableBatchBuilder {
+    const config = audience instanceof InteractAudience ? audience.toAudienceConfig() : audience
+    return this.setAudience(
+      [{ n: config.audienceId.name, v: config.audienceId.value, t: config.audienceId.type }],
+      audienceLevel || config.audienceLevel,
+    )
+  }
+
+  endSession(): Promise<BatchResponse> {
+    this.commands.push({
+      action: "endSession",
+    })
+    return this.execute()
+  }
+
+  private async execute(): Promise<BatchResponse> {
+    // Use same session precedence logic as BatchBuilder
+    const effectiveSessionId =
+      this.commands.length > 0 &&
+      this.commands[0].action === "startSession" &&
+      this.commands[0].customSessionId !== undefined
+        ? this.commands[0].customSessionId
+        : this.sessionId !== undefined
+        ? this.sessionId
+        : this.client.getSessionId()
+
+    const result = await this.client._executeBatch(effectiveSessionId, this.commands)
     return result
   }
 }
