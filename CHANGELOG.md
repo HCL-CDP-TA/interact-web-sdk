@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.5.0...v2.5.1) (2025-09-11)
+
+
+### Bug Fixes
+
+* added synthetic response if startSession is suppressed by autoSession ([7666b15](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/7666b15166c00a5c6254f97884562b802d4e177f))
+
 ## [2.5.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.4.2...v2.5.0) (2025-09-11)
 
 
