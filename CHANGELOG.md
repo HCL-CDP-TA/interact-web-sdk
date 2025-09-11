@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.5.1...v2.6.0) (2025-09-11)
+
+
+### Features
+
+* add copilot instructions and enhance SDK session management with improved logging and API consistency ([6148e14](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/6148e1446bb8dbdf6fee842fe8e21e232d0159ba))
+
 ## [2.5.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.5.0...v2.5.1) (2025-09-11)
 
 
