@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.4.2...v2.5.0) (2025-09-11)
+
+
+### Features
+
+* Session optimisation improvements ([8cef90b](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/8cef90b0a8cfac82a6403aa14dcbc403779a53de))
+
 ## [2.4.2](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.4.1...v2.4.2) (2025-09-09)
 
 

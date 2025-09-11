@@ -1,6 +1,6 @@
 {
   "name": "@hcl-cdp-ta/interact-sdk",
-  "version": "2.4.2",
+  "version": "2.5.0",
   "description": "HCL Interact SDK",
   "license": "ISC",
   "author": "Simon Pallister",
