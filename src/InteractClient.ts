@@ -423,6 +423,10 @@ export class InteractClient {
 
           // If we have audience config, recover by prepending startSession to the batch
           if (audience) {
+            if (this.config.enableLogging) {
+              console.log("Session recovery: Starting new session with audience:", audience.audienceLevel)
+            }
+
             // Create a new batch with startSession command first, then original commands
             const recoveryCommands: Command[] = [
               {
@@ -457,7 +461,17 @@ export class InteractClient {
             return recoveryResponse
           }
 
-          throw new Error("Cannot recover session: no audience configuration provided")
+          if (this.config.enableLogging) {
+            console.error("Session recovery failed: No audience configuration available")
+            console.error("Original request had session:", currentSessionId)
+            console.error("Stored audience:", this.getStoredAudience())
+          }
+
+          throw new Error(
+            "Cannot recover session: no audience configuration provided. " +
+              "This usually happens when the session expired and no audience was stored. " +
+              "Try calling startSession(audience) first or provide an audience parameter.",
+          )
         }
 
         return response
@@ -736,6 +750,15 @@ export class InteractClient {
 
     // Use provided audience or fall back to stored audience for session recovery
     const recoveryAudience = audience || this.getStoredAudience()
+
+    if (this.config.enableLogging) {
+      console.log("getOffers: sessionId =", sessionId)
+      console.log("getOffers: recoveryAudience available =", !!recoveryAudience)
+      if (!recoveryAudience) {
+        console.warn("getOffers: No recovery audience available - session recovery will fail if session is invalid")
+      }
+    }
+
     const batchResponse = await this.executeBatchWithRetry(sessionId, commands, recoveryAudience)
     return this.extractFirstResponse(batchResponse)
   }
@@ -810,11 +833,33 @@ export class InteractClient {
     return this.extractFirstResponse(batchResponse)
   }
 
-  async setAudience(sessionId: string, audienceID: NameValuePair[], audienceLevel?: string): Promise<InteractResponse> {
+  // Set audience with manual NameValuePair array (low-level)
+  async setAudience(sessionId: string, audienceLevel: string, audienceID: NameValuePair[]): Promise<InteractResponse>
+  // Set audience from AudienceConfig (recommended - consistent with createAudience format)
+  async setAudience(sessionId: string, audience: AudienceConfig): Promise<InteractResponse>
+  async setAudience(
+    sessionId: string,
+    audienceLevelOrConfig: string | AudienceConfig,
+    audienceID?: NameValuePair[],
+  ): Promise<InteractResponse> {
+    let audienceLevel: string
+    let audienceIDArray: NameValuePair[]
+
+    if (typeof audienceLevelOrConfig === "string") {
+      // Low-level usage: setAudience(sessionId, audienceLevel, audienceID)
+      audienceLevel = audienceLevelOrConfig
+      audienceIDArray = audienceID!
+    } else {
+      // High-level usage: setAudience(sessionId, audienceConfig)
+      const audience = audienceLevelOrConfig
+      audienceLevel = audience.audienceLevel
+      audienceIDArray = this.convertAudienceToArray(audience)
+    }
+
     const commands: Command[] = [
       {
         action: "setAudience",
-        audienceID,
+        audienceID: audienceIDArray,
         audienceLevel,
       },
     ]
@@ -830,13 +875,9 @@ export class InteractClient {
     return response
   }
 
-  async setAudienceFromConfig(
-    sessionId: string,
-    audience: AudienceConfig,
-    audienceLevel?: string,
-  ): Promise<InteractResponse> {
-    const audienceIdArray = this.convertAudienceToArray(audience)
-    return this.setAudience(sessionId, audienceIdArray, audienceLevel)
+  // Legacy method for backward compatibility
+  async setAudienceFromConfig(sessionId: string, audience: AudienceConfig): Promise<InteractResponse> {
+    return this.setAudience(sessionId, audience)
   }
 
   // Batch builder for complex workflows
@@ -1054,7 +1095,8 @@ export class BatchBuilder {
     return this
   }
 
-  setAudience(audienceID: NameValuePair[], audienceLevel?: string): BatchBuilder {
+  // Set audience with manual NameValuePair array (low-level)
+  setAudience(audienceLevel: string, audienceID: NameValuePair[]): BatchBuilder {
     this.commands.push({
       action: "setAudience",
       audienceID,
@@ -1063,9 +1105,10 @@ export class BatchBuilder {
     return this
   }
 
-  setAudienceFromConfig(audience: AudienceConfig, audienceLevel?: string): BatchBuilder {
+  // Set audience from AudienceConfig (recommended - matches createAudience format)
+  setAudienceFromConfig(audience: AudienceConfig): BatchBuilder {
     const audienceIdArray = this.client["convertAudienceToArray"](audience)
-    return this.setAudience(audienceIdArray, audienceLevel)
+    return this.setAudience(audience.audienceLevel, audienceIdArray)
   }
 
   async execute(sessionId?: string | null): Promise<BatchResponse> {
@@ -1235,21 +1278,22 @@ export class ExecutableBatchBuilder {
     return this.execute()
   }
 
-  setAudience(audienceID: NameValuePair[], audienceLevel?: string): ExecutableBatchBuilder {
+  // Set audience with manual NameValuePair array (low-level)
+  setAudience(audienceLevel: string, audienceID: NameValuePair[]): ExecutableBatchBuilder {
     this.commands.push({
       action: "setAudience",
-      audienceLevel: audienceLevel || InteractAudienceLevel.Visitor,
+      audienceLevel,
       audienceID,
     })
     return this
   }
 
-  setAudienceFromConfig(audience: AudienceConfig | InteractAudience, audienceLevel?: string): ExecutableBatchBuilder {
+  // Set audience from AudienceConfig (recommended - matches createAudience format)
+  setAudienceFromConfig(audience: AudienceConfig | InteractAudience): ExecutableBatchBuilder {
     const config = audience instanceof InteractAudience ? audience.toAudienceConfig() : audience
-    return this.setAudience(
-      [{ n: config.audienceId.name, v: config.audienceId.value, t: config.audienceId.type }],
-      audienceLevel || config.audienceLevel,
-    )
+    return this.setAudience(config.audienceLevel, [
+      { n: config.audienceId.name, v: config.audienceId.value, t: config.audienceId.type },
+    ])
   }
 
   endSession(): Promise<BatchResponse> {

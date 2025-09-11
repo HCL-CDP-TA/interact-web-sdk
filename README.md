@@ -212,6 +212,28 @@ const offersResponse = await client.getOffers("HomePage_Hero", 3)
 await client.postEvent("page_view")
 ```
 
+## Key SDK Improvements
+
+### ✅ Standardized API Consistency
+
+- **Unified Parameter Order**: All audience methods follow consistent `(level, identifier, value, type)` pattern
+- **Direct Integration**: `createAudience()` results work directly with `setAudience()` - no conversion needed!
+- **Method Overloads**: Both high-level (`AudienceConfig`) and low-level (`NameValuePair[]`) usage supported
+
+### ✅ Enhanced Session Management
+
+- **Automatic Recovery**: Sessions automatically recover when expired server-side
+- **Synthetic Response Injection**: Optimized commands maintain response array alignment
+- **Session Persistence**: Sessions survive page refreshes with configurable expiry
+- **Smart Optimization**: Skips unnecessary `startSession` calls when valid session exists
+
+### ✅ Developer Experience
+
+- **Type Safety**: Full TypeScript support with enums for better IntelliSense
+- **Consistent Batching**: BatchBuilder methods match main client signatures exactly
+- **Clear Error Messages**: Detailed diagnostics for session recovery failures
+- **Backward Compatibility**: All existing code continues to work
+
 ## Core Classes
 
 ### InteractClient
@@ -243,7 +265,8 @@ Efficient batch operations for complex workflows and performance optimization.
   - `options.parameters` - Optional additional parameters to send with session start
   - `options.relyOnExistingSession` - Whether to rely on existing session (default: `true`)
   - `options.debug` - Enable debug mode for additional diagnostics (default: `false`)
-- `setAudience(sessionId, level, audienceData)` - Set or update audience information
+- `setAudience(sessionId, audience)` - Set audience using AudienceConfig (recommended)
+- `setAudience(sessionId, audienceLevel, audienceData)` - Set audience with manual NameValuePair array (low-level)
 - `getSessionId()` - Get current active session ID
 - `endSession(sessionId)` - End session and cleanup
 
@@ -316,8 +339,8 @@ The BatchBuilder supports the same method signatures as the main client for **co
 - `startSession(audience, sessionId?, options?)` - With full options support
 - `getOffers(interactionPoint, numberRequested?, options?)` - Same as main client
 - `postEvent(eventName, parameters?, options?)` - Same as main client
-- `setAudience(audienceID, audienceLevel?)` - Set audience in batch
-- `setAudienceFromConfig(audience, audienceLevel?)` - Set audience using AudienceConfig
+- `setAudience(audienceLevel, audienceID)` - Set audience in batch (consistent parameter order)
+- `setAudienceFromConfig(audience)` - Set audience using AudienceConfig (recommended)
 - `endSession()` - Add end session to batch
 - `execute(sessionId)` - Execute the batch with specified session ID
 
@@ -618,14 +641,30 @@ When this occurs, the SDK:
 ### Audience Management
 
 ```typescript
-// Set comprehensive audience data
+// ✅ RECOMMENDED: Use createAudience + setAudience directly
+const audience = InteractClient.createAudience(
+  InteractAudienceLevel.Customer,
+  "CustomerID",
+  "CUST123",
+  InteractParamType.String
+)
+await client.setAudience(sessionId, audience)  // Direct usage!
+
+// ✅ ALTERNATIVE: Using fluent API
+const audience = InteractAudience.customer(InteractParam.string("CustomerID", "CUST123"))
+await client.setAudience(sessionId, audience.toAudienceConfig())
+
+// ✅ LOW-LEVEL: Manual NameValuePair array (for advanced cases)
 await client.setAudience(sessionId, "Customer", [
-  { name: "CustomerID", value: "CUST123", type: "string" },
-  { name: "Tenure", value: "24", type: "numeric" },
-  { name: "PremiumMember", value: "true", type: "boolean" },
-  { name: "LastLogin", value: "2025-09-03T10:30:00Z", type: "datetime" },
+  { n: "CustomerID", v: "CUST123", t: "string" },
+  { n: "Tenure", v: "24", t: "numeric" },
+  { n: "PremiumMember", v: "true", t: "string" },
+  { n: "LastLogin", v: "2025-09-03T10:30:00Z", t: "datetime" },
 ])
-````
+
+// ✅ LEGACY: Backward compatibility (still works)
+await client.setAudienceFromConfig(sessionId, audience)
+```
 
 ### Batch Operations Example
 
@@ -877,29 +916,101 @@ const audience = {
 await client.startSession(audience)
 ```
 
+## API Consistency & Standardization
+
+The SDK provides consistent parameter ordering and format across all audience-related methods:
+
+### Standardized setAudience API
+
+```typescript
+// ✅ RECOMMENDED: High-level usage with createAudience
+const audience = InteractClient.createAudience(
+  InteractAudienceLevel.Customer,    // Consistent parameter order
+  "CustomerID",
+  "12345",
+  InteractParamType.String
+)
+
+// Direct usage - no conversion needed!
+await client.setAudience(sessionId, audience)
+
+// ✅ Batch operations use the same format
+const batch = client.createBatch()
+  .setAudienceFromConfig(audience)    // High-level
+  .setAudience("Customer", audienceArray)  // Low-level
+  .getOffers("homepage", 3)
+
+await batch.execute(sessionId)
+```
+
+### Parameter Order Consistency
+
+All audience methods now follow the same logical order:
+
+```typescript
+// ✅ Consistent pattern: (level, identifier, value, type)
+createAudience(audienceLevel, audienceIdName, audienceIdValue, audienceIdType)
+setAudience(sessionId, audienceLevel, audienceID)  // or setAudience(sessionId, audienceConfig)
+
+// ✅ Batch methods match the same pattern
+batch.setAudience(audienceLevel, audienceID)
+batch.setAudienceFromConfig(audienceConfig)
+```
+
+### Migration from Legacy API
+
+```typescript
+// ❌ OLD inconsistent way
+const audienceID = [{ n: "CustomerID", v: "12345", t: "string" }]
+await client.setAudience(sessionId, audienceID, "Customer")  // level at end
+
+// ✅ NEW standardized way (recommended)
+const audience = InteractClient.createAudience("Customer", "CustomerID", "12345", InteractParamType.String)
+await client.setAudience(sessionId, audience)  // direct usage
+
+// ✅ NEW low-level way (consistent order)
+await client.setAudience(sessionId, "Customer", audienceID)  // level comes first
+```
+
 ## Helper Methods
 
 The SDK provides static helper methods to simplify common tasks:
 
 ### createAudience()
 
-Creates an AudienceConfig object with proper typing:
+Creates an AudienceConfig object that can be used directly with setAudience():
 
 ```typescript
 import { InteractClient, InteractAudienceLevel, InteractParamType } from "@hcl-cdp-ta/interact-sdk"
 
-// Using the helper method with enums (recommended)
+// ✅ RECOMMENDED: Using enums for type safety
 const audience = InteractClient.createAudience(
-  InteractAudienceLevel.Visitor,
-  "VisitorID",
-  "0",
+  InteractAudienceLevel.Customer,
+  "CustomerID",
+  "12345",
   InteractParamType.String,
 )
 
-// Type examples:
-const visitorAudience = InteractClient.createAudience(InteractAudienceLevel.Visitor, "VisitorID", "12345")
+// ✅ Direct usage with setAudience (no conversion needed!)
+await client.setAudience(sessionId, audience)
+
+// ✅ Works with all audience operations
+await client.startSession(audience)
+batch.setAudienceFromConfig(audience)
+
+// Type examples with defaults:
+const visitorAudience = InteractClient.createAudience(
+  InteractAudienceLevel.Visitor,
+  "VisitorID",
+  "12345"  // type defaults to String
+)
 
 const customerAudience = InteractClient.createAudience(
+  InteractAudienceLevel.Customer,
+  "CustomerID",
+  987654,
+  InteractParamType.Numeric,
+)
   InteractAudienceLevel.Customer,
   "CustomerID",
   987654,
@@ -975,3 +1086,4 @@ try {
 - **Integration Examples**: Complete demo application with source code
 - **Component Library**: React components in `interact-sdk-test/components/`
 - **Performance Monitoring**: ResponseMetrics component for real-time tracking
+````
