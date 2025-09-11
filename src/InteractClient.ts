@@ -158,6 +158,9 @@ export interface InteractResponse {
   profile?: NameValuePair[]
   version?: string
   messages?: InteractMessage[]
+  // Synthetic response properties (added by SDK optimization)
+  _synthetic?: boolean
+  _filteredCommand?: string
 }
 
 export interface BatchResponse {
@@ -486,9 +489,22 @@ export class InteractClient {
     }
 
     // Filter out startSession commands if we already have a valid session
-    const filteredCommands = this.shouldSkipStartSession()
-      ? commands.filter(cmd => cmd.action !== "startSession")
-      : commands
+    // Track filtered command positions for synthetic response injection
+    const filteredCommandsInfo: { command: Command; originalIndex: number }[] = []
+    const filteredCommands: Command[] = []
+
+    if (this.shouldSkipStartSession()) {
+      commands.forEach((cmd, index) => {
+        if (cmd.action === "startSession") {
+          filteredCommandsInfo.push({ command: cmd, originalIndex: index })
+        } else {
+          filteredCommands.push(cmd)
+        }
+      })
+    } else {
+      // No filtering, keep all commands
+      commands.forEach(cmd => filteredCommands.push(cmd))
+    }
 
     // If all commands were filtered out, return empty success response
     if (filteredCommands.length === 0) {
@@ -510,7 +526,7 @@ export class InteractClient {
 
     // Use existing session ID if we filtered out startSession commands
     const effectiveSessionId =
-      filteredCommands.length < commands.length && this.shouldSkipStartSession() ? this.getSessionId() : sessionId
+      filteredCommandsInfo.length > 0 && this.shouldSkipStartSession() ? this.getSessionId() : sessionId
 
     // Only include sessionId if we have one, let server generate one if null
     if (effectiveSessionId !== null) {
@@ -542,6 +558,44 @@ export class InteractClient {
         if (this.config.enableLogging) {
           console.log("Interact Response:", responseData)
         }
+
+        // Inject synthetic responses for filtered startSession commands
+        if (filteredCommandsInfo.length > 0) {
+          const syntheticResponses = filteredCommandsInfo.map(({ command, originalIndex }) => ({
+            statusCode: 0,
+            sessionId: this.getSessionId(),
+            messages: [],
+            _synthetic: true, // Mark as synthetic response
+            _filteredCommand: command.action, // Identify which command was filtered
+          }))
+
+          // Reconstruct response array with synthetic responses at correct positions
+          const reconstructedResponses: any[] = []
+          let serverResponseIndex = 0
+
+          for (let i = 0; i < commands.length; i++) {
+            const filteredInfo = filteredCommandsInfo.find(info => info.originalIndex === i)
+            if (filteredInfo) {
+              // Insert synthetic response for filtered command
+              const syntheticResponse = syntheticResponses.find(
+                resp => resp._filteredCommand === filteredInfo.command.action,
+              )
+              reconstructedResponses.push(syntheticResponse)
+            } else {
+              // Insert actual server response
+              if (serverResponseIndex < responseData.responses.length) {
+                reconstructedResponses.push(responseData.responses[serverResponseIndex])
+                serverResponseIndex++
+              }
+            }
+          }
+
+          return {
+            ...responseData,
+            responses: reconstructedResponses,
+          }
+        }
+
         return responseData
       } else {
         throw new Error(`Interact API error: ${response.status}`)
