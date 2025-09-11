@@ -17,7 +17,9 @@ npm install @hcl-cdp-ta/interact-sdk
 Load directly from GitHub (or use your preferred CDN):
 
 ```html
-<!-- Load from GitHub -->
+<!-- Load from # Start session with audience
+const audience = InteractAudience.customer(InteractParam.create("CustomerID", "67890", InteractParamType.Numeric))
+await client.startSession(audience)Hub -->
 <script src="https://raw.githubusercontent.com/HCL-CDP-TA/interact-web-sdk/main/dist/index.global.js"></script>
 
 <!-- Or specific version -->
@@ -58,10 +60,11 @@ The SDK is fully compatible with vanilla JavaScript and can be used directly in 
         InteractClient,
         InteractAudience,
         InteractParam,
+        InteractParamType,
       } from "https://unpkg.com/@hcl-cdp-ta/interact-sdk/dist/index.js"
 
       // Or serve the file locally
-      // import { InteractClient, InteractAudience, InteractParam } from './node_modules/@hcl-cdp-ta/interact-sdk/dist/index.js'
+      // import { InteractClient, InteractAudience, InteractParam, InteractParamType } from './node_modules/@hcl-cdp-ta/interact-sdk/dist/index.js'
 
       const client = new InteractClient({
         serverUrl: "https://your-interact-server.com/interact",
@@ -80,7 +83,10 @@ The SDK is fully compatible with vanilla JavaScript and can be used directly in 
           const audienceHelper = InteractClient.createAudience("Visitor", "VisitorID", "0", "string")
 
           // Option 3: Class-based fluent API (recommended)
-          const audienceFluent = new InteractAudience("Visitor", InteractParam.string("VisitorID", "0"))
+          const audienceFluent = new InteractAudience(
+            "Visitor",
+            InteractParam.create("VisitorID", "0", InteractParamType.String),
+          )
 
           const sessionResponse = await client.startSession(audienceFluent)
           console.log("Session started:", sessionResponse.sessionId)
@@ -187,7 +193,7 @@ See the complete working example at [`vanilla-example.html`](../vanilla-example.
 ## Quick Start
 
 ```typescript
-import { InteractClient, InteractAudience, InteractParam } from "@hcl-cdp-ta/interact-sdk"
+import { InteractClient, InteractAudience, InteractParam, InteractParamType } from "@hcl-cdp-ta/interact-sdk"
 
 // Initialize client
 const client = new InteractClient({
@@ -196,7 +202,7 @@ const client = new InteractClient({
 })
 
 // Define audience using fluent builders
-const audience = InteractAudience.visitor(InteractParam.string("VisitorID", "0"))
+const audience = InteractAudience.visitor(InteractParam.create("VisitorID", "0", InteractParamType.String))
 
 // Start session and get offers (client manages session automatically)
 const sessionResponse = await client.startSession(audience)
@@ -320,7 +326,7 @@ The BatchBuilder supports the same method signatures as the main client for **co
 #### API Consistency Example
 
 ```typescript
-const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+const audience = InteractAudience.customer(InteractParam.create("CustomerID", "67890", InteractParamType.Numeric))
 
 // Direct client calls
 await client.startSession(audience, "custom-session-123")
@@ -419,7 +425,7 @@ The client automatically manages sessions for you. Just start a session once and
 
 ```typescript
 // Start session with audience once
-const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+const audience = InteractAudience.customer(InteractParam.create("CustomerID", "67890", InteractParamType.Numeric))
 await client.startSession(audience)
 
 // All subsequent calls automatically use the stored session AND stored audience
@@ -444,13 +450,13 @@ The client automatically manages sessions for you, including **automatic session
 
 ```typescript
 // Start session with audience
-const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+const audience = InteractAudience.customer(InteractParam.create("CustomerID", "67890", InteractParamType.Numeric))
 await client.startSession(audience)
 
 // All subsequent calls use the established session automatically
 const offers = await client.getOffers("ProductPage_Sidebar", 2)
 await client.postEvent("product_view", [
-  InteractParam.string("ProductID", "ABC123").toNameValuePair()
+  InteractParam.create("ProductID", "ABC123", InteractParamType.String).toNameValuePair()
 ])
 
 // If the session expires on the server, the SDK automatically:
@@ -476,11 +482,7 @@ await client.postEvent("product_view", [
 // Create client and execute batch with startSession
 const client = new InteractClient({ serverUrl: "..." })
 
-const batchResponse = await client
-  .createBatch()
-  .startSession(audience)
-  .getOffers("homepage", 3)
-  .execute()
+const batchResponse = await client.createBatch().startSession(audience).getOffers("homepage", 3).execute()
 
 // ✅ Client now has the session ID automatically set!
 console.log(client.getSessionId()) // Session ID is available
@@ -491,6 +493,55 @@ setState({ client }) // Client retains session for future operations
 // Same applies to fluent batch API
 await client.executeBatch().startSession(audience) // Client session ID updated automatically
 ```
+
+#### Session Persistence Across Page Refreshes
+
+**NEW**: The SDK automatically persists sessions using `sessionStorage`, so your sessions survive page refreshes:
+
+```typescript
+// Create client - session persistence is enabled by default
+const client = new InteractClient({ serverUrl: "..." })
+
+// Start session
+await client.startSession(audience)
+console.log(client.getSessionId()) // e.g., "ABC123"
+
+// 🔄 User refreshes the page, your app reinitializes...
+
+// Create new client instance after page refresh
+const newClient = new InteractClient({ serverUrl: "..." })
+console.log(newClient.getSessionId()) // Still "ABC123"! ✅
+
+// Continue using the persisted session
+const offers = await newClient.getOffers("homepage", 3) // Works seamlessly!
+```
+
+**Configuration Options:**
+
+```typescript
+const client = new InteractClient({
+  serverUrl: "https://your-server.com/interact",
+  persistSession: true, // Default: true
+  sessionStorageKey: "my-custom-session-key", // Default: "interact-session"
+})
+
+// Disable session persistence
+const temporaryClient = new InteractClient({
+  serverUrl: "https://your-server.com/interact",
+  persistSession: false, // Sessions won't survive page refreshes
+})
+
+// Manually clear persisted session
+client.clearSession() // Clears both in-memory and persisted session
+```
+
+**Features:**
+
+- **Automatic**: Sessions persist across page refreshes by default
+- **Secure**: Uses `sessionStorage` (clears when browser tab closes)
+- **Configurable**: Custom storage keys, opt-out capability
+- **Smart Expiry**: Auto-expires persisted sessions after 30 minutes of inactivity
+- **Server-Side Safe**: Gracefully handles SSR environments (no storage available)
 
 ```typescript
 // Example: Even if session expires between these calls, it's handled automatically
@@ -579,7 +630,7 @@ await client.setAudience(sessionId, "Customer", [
 ### Batch Operations Example
 
 ```typescript
-const audience = InteractAudience.visitor(InteractParam.string("VisitorID", "0"))
+const audience = InteractAudience.visitor(InteractParam.create("VisitorID", "0", InteractParamType.String))
 
 // === ONE-LINE BATCH API (New!) ===
 // Perfect for simple operations - auto-executes when terminal method is called
@@ -790,14 +841,16 @@ The SDK supports multiple API styles to match your preferences:
 Type-safe, modern approach with IntelliSense support:
 
 ```typescript
-import { InteractClient, InteractAudience, InteractParam } from "@hcl-cdp-ta/interact-sdk"
+import { InteractClient, InteractAudience, InteractParam, InteractParamType } from "@hcl-cdp-ta/interact-sdk"
 
 // Create audience with fluent API
-const audience = new InteractAudience("Visitor", InteractParam.string("VisitorID", "0"))
+const audience = new InteractAudience("Visitor", InteractParam.create("VisitorID", "0", InteractParamType.String))
 
 // Alternative factory methods
-const visitorAudience = InteractAudience.visitor(InteractParam.string("VisitorID", "0"))
-const customerAudience = InteractAudience.customer(InteractParam.numeric("CustomerID", 67890))
+const visitorAudience = InteractAudience.visitor(InteractParam.create("VisitorID", "0", InteractParamType.String))
+const customerAudience = InteractAudience.customer(
+  InteractParam.create("CustomerID", "67890", InteractParamType.Numeric),
+)
 
 // Start session
 await client.startSession(audience)
@@ -833,7 +886,7 @@ The SDK provides static helper methods to simplify common tasks:
 Creates an AudienceConfig object with proper typing:
 
 ```typescript
-import { InteractClient, InteractAudienceLevel, InteractParamType } from "@interact/sdk"
+import { InteractClient, InteractAudienceLevel, InteractParamType } from "@hcl-cdp-ta/interact-sdk"
 
 // Using the helper method with enums (recommended)
 const audience = InteractClient.createAudience(
@@ -865,7 +918,7 @@ const audience = {
 Creates a NameValuePair for event parameters:
 
 ```typescript
-import { InteractClient, InteractParamType } from "@interact/sdk"
+import { InteractClient, InteractParamType } from "@hcl-cdp-ta/interact-sdk"
 
 const param = InteractClient.createParameter("pageURL", "/homepage", InteractParamType.String)
 // Returns: { n: "pageURL", v: "/homepage", t: "string" }

@@ -81,6 +81,9 @@ export interface InteractConfig {
   username?: string
   password?: string
   enableLogging?: boolean
+  persistSession?: boolean // Enable session persistence across page refreshes (default: true)
+  sessionStorageKey?: string // Key for sessionStorage (default: "interact-session")
+  sessionExpiryMinutes?: number // Minutes until persisted session expires (default: 30)
 }
 
 export interface AudienceConfig {
@@ -176,6 +179,69 @@ export class InteractClient {
     this.config = {
       ...config,
       interactiveChannel: config.interactiveChannel || "_RealTimePersonalization_",
+      persistSession: config.persistSession !== false, // Default to true
+      sessionStorageKey: config.sessionStorageKey || "interact-session",
+      sessionExpiryMinutes: config.sessionExpiryMinutes || 30, // Default to 30 minutes
+    }
+
+    // Load persisted session on initialization
+    this.loadPersistedSession()
+  }
+
+  // Session persistence methods
+  private isBrowser(): boolean {
+    return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined"
+  }
+
+  private saveSessionToStorage(): void {
+    if (!this.config.persistSession || !this.isBrowser()) return
+
+    try {
+      const sessionData = {
+        sessionId: this.sessionState.sessionId,
+        audience: this.sessionState.audience,
+        lastActivity: this.sessionState.lastActivity.toISOString(),
+        interactiveChannel: this.config.interactiveChannel,
+      }
+      window.sessionStorage.setItem(this.config.sessionStorageKey!, JSON.stringify(sessionData))
+    } catch (error) {
+      console.warn("Failed to save session to storage:", error)
+    }
+  }
+
+  private loadPersistedSession(): void {
+    if (!this.config.persistSession || !this.isBrowser()) return
+
+    try {
+      const stored = window.sessionStorage.getItem(this.config.sessionStorageKey!)
+      if (stored) {
+        const sessionData = JSON.parse(stored)
+
+        // Only restore if the session is recent (within configured expiry time)
+        const lastActivity = new Date(sessionData.lastActivity)
+        const expiryTime = new Date(Date.now() - this.config.sessionExpiryMinutes! * 60 * 1000)
+
+        if (lastActivity > expiryTime && sessionData.sessionId) {
+          this.sessionState = {
+            sessionId: sessionData.sessionId,
+            isValid: true,
+            lastActivity: lastActivity,
+            audience: sessionData.audience,
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to load persisted session:", error)
+    }
+  }
+
+  private clearPersistedSession(): void {
+    if (!this.config.persistSession || !this.isBrowser()) return
+
+    try {
+      window.sessionStorage.removeItem(this.config.sessionStorageKey!)
+    } catch (error) {
+      console.warn("Failed to clear persisted session:", error)
     }
   }
 
@@ -210,6 +276,13 @@ export class InteractClient {
     this.sessionState.sessionId = sessionId
     this.sessionState.isValid = !!sessionId
     this.sessionState.lastActivity = new Date()
+
+    // Persist session to storage
+    if (sessionId) {
+      this.saveSessionToStorage()
+    } else {
+      this.clearPersistedSession()
+    }
   }
 
   // Set both session and audience for session recovery
@@ -219,6 +292,13 @@ export class InteractClient {
     this.sessionState.lastActivity = new Date()
     if (audience) {
       this.sessionState.audience = audience
+    }
+
+    // Persist session to storage
+    if (sessionId) {
+      this.saveSessionToStorage()
+    } else {
+      this.clearPersistedSession()
     }
   }
 
@@ -231,6 +311,19 @@ export class InteractClient {
     return this.sessionState.isValid && !!this.sessionState.sessionId
   }
 
+  // Check if we have a valid session that doesn't need startSession
+  private shouldSkipStartSession(): boolean {
+    if (!this.isSessionValid()) return false
+
+    // Check if session hasn't expired based on last activity
+    const now = new Date()
+    const expiryTime = new Date(
+      this.sessionState.lastActivity.getTime() + this.config.sessionExpiryMinutes! * 60 * 1000,
+    )
+
+    return now < expiryTime
+  }
+
   clearSession(): void {
     this.sessionState = {
       sessionId: null,
@@ -238,6 +331,7 @@ export class InteractClient {
       lastActivity: new Date(),
       audience: undefined,
     }
+    this.clearPersistedSession()
   }
 
   // Helper methods for default audience configurations
@@ -391,14 +485,36 @@ export class InteractClient {
       headers["m_user_password"] = encodeURIComponent(this.config.password || "")
     }
 
-    // Build request body - only include sessionId if it's not null
-    const requestBody: any = {
-      commands: commands,
+    // Filter out startSession commands if we already have a valid session
+    const filteredCommands = this.shouldSkipStartSession()
+      ? commands.filter(cmd => cmd.action !== "startSession")
+      : commands
+
+    // If all commands were filtered out, return empty success response
+    if (filteredCommands.length === 0) {
+      return {
+        batchStatusCode: 200,
+        responses: [],
+      }
     }
 
+    // Build request body - only include sessionId if it's not null
+    const requestBody: any = {
+      commands: filteredCommands.map(cmd => {
+        // Remove internal-only fields before sending to server
+        // customSessionId is used internally for session management but not recognized by server
+        const { customSessionId, ...serverCommand } = cmd
+        return serverCommand
+      }),
+    }
+
+    // Use existing session ID if we filtered out startSession commands
+    const effectiveSessionId =
+      filteredCommands.length < commands.length && this.shouldSkipStartSession() ? this.getSessionId() : sessionId
+
     // Only include sessionId if we have one, let server generate one if null
-    if (sessionId !== null) {
-      requestBody.sessionId = sessionId
+    if (effectiveSessionId !== null) {
+      requestBody.sessionId = effectiveSessionId
     }
 
     const requestBodyString = JSON.stringify(requestBody)
@@ -490,6 +606,23 @@ export class InteractClient {
   ): Promise<InteractResponse> {
     // Convert InteractAudience to AudienceConfig if needed
     const audienceConfig = audience instanceof InteractAudience ? audience.toAudienceConfig() : audience
+
+    // Skip startSession if we already have a valid session and no custom sessionId
+    if (!sessionId && this.shouldSkipStartSession()) {
+      // Update stored audience and return mock response
+      this.sessionState.audience = audienceConfig
+      this.sessionState.lastActivity = new Date()
+      this.saveSessionToStorage()
+
+      return {
+        sessionId: this.sessionState.sessionId!,
+        statusCode: 200,
+        offerLists: [],
+        profile: [],
+        version: "2.4.1",
+        messages: [],
+      }
+    }
 
     const audienceIdArray = this.convertAudienceToArray(audienceConfig)
     const response = await this.startSessionLowLevel(
@@ -616,6 +749,10 @@ export class InteractClient {
     ]
 
     const batchResponse = await this._executeBatch(sessionId, commands)
+
+    // Clear session state and persisted session
+    this.setSessionId(null)
+
     return this.extractFirstResponse(batchResponse)
   }
 
@@ -892,12 +1029,12 @@ export class BatchBuilder {
         : this.client.getSessionId()
 
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
-    
+
     // If batch contains startSession, update client's session ID
     if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
       this.client.setSessionId(result.responses[0].sessionId)
     }
-    
+
     this.commands = [] // Reset for reuse
     return result
   }
@@ -1080,12 +1217,12 @@ export class ExecutableBatchBuilder {
         : this.client.getSessionId()
 
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
-    
+
     // If batch contains startSession, update client's session ID
     if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
       this.client.setSessionId(result.responses[0].sessionId)
     }
-    
+
     return result
   }
 }
