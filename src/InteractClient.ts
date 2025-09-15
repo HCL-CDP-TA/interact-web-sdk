@@ -337,6 +337,52 @@ export class InteractClient {
     this.clearPersistedSession()
   }
 
+  /**
+   * Debug method to help troubleshoot session recovery issues
+   * Use this to understand why session recovery might not be working
+   */
+  debugSessionState(): void {
+    const storedAudience = this.getStoredAudience()
+
+    console.log("🔍 Session Debug Information:")
+    console.log("   Session ID:", this.sessionState.sessionId)
+    console.log("   Session Valid:", this.sessionState.isValid)
+    console.log("   Has Stored Audience:", !!storedAudience)
+    console.log("   Last Activity:", this.sessionState.lastActivity?.toISOString())
+
+    if (storedAudience) {
+      console.log("   Audience Level:", storedAudience.audienceLevel)
+      console.log("   Audience IDs:", storedAudience.audienceId)
+    } else {
+      console.log("   ❌ No audience stored - recovery will fail!")
+      console.log("   📝 Solutions:")
+      console.log("      • Use startSession(audience) instead of setSessionId()")
+      console.log("      • Call setSession(sessionId, audience) with both parameters")
+      console.log("      • Provide audience parameter to getOffers()")
+    }
+
+    // Check sessionStorage persistence
+    if (this.config.persistSession && this.isBrowser()) {
+      try {
+        const stored = window.sessionStorage.getItem(this.config.sessionStorageKey!)
+        if (stored) {
+          const sessionData = JSON.parse(stored)
+          console.log("   💾 Persisted Session:", sessionData.sessionId)
+          console.log("   💾 Persisted Audience:", !!sessionData.audience)
+        } else {
+          console.log("   💾 No persisted session data found")
+        }
+      } catch (error) {
+        console.log("   💾 Error reading persisted session:", error)
+      }
+    } else {
+      console.log("   💾 Session persistence disabled or not in browser")
+    }
+
+    console.log("   ⚙️  Persistence Enabled:", this.config.persistSession)
+    console.log("   📋 Logging Enabled:", this.config.enableLogging)
+  }
+
   // Helper methods for default audience configurations
   static createVisitorAudience(visitorId: string = "0"): AudienceConfig {
     return {
@@ -462,9 +508,20 @@ export class InteractClient {
           }
 
           if (this.config.enableLogging) {
-            console.error("Session recovery failed: No audience configuration available")
-            console.error("Original request had session:", currentSessionId)
-            console.error("Stored audience:", this.getStoredAudience())
+            console.error("❌ Session recovery failed: No audience configuration available")
+            console.error("   - Invalid session ID:", currentSessionId)
+            console.error("   - Stored audience:", this.getStoredAudience())
+            console.error("   - Session state:", {
+              sessionId: this.sessionState.sessionId,
+              isValid: this.sessionState.isValid,
+              hasAudience: !!this.sessionState.audience,
+              lastActivity: this.sessionState.lastActivity,
+            })
+            console.error("   - This usually means the session was set externally without storing audience")
+            console.error("   - Solutions:")
+            console.error("     1. Call startSession(audience) instead of setSessionId()")
+            console.error("     2. Provide audience parameter to getOffers()")
+            console.error("     3. Call setSession(sessionId, audience) to store both")
           }
 
           throw new Error(
@@ -951,6 +1008,10 @@ export class InteractClient {
 
   private extractFirstResponse(batchResponse: BatchResponse): InteractResponse {
     if (batchResponse.responses && batchResponse.responses.length >= 1) {
+      // Skip synthetic responses and return the first real server response
+      const realResponse = batchResponse.responses.find(r => !r._synthetic)
+      if (realResponse) return realResponse
+      // If all are synthetic, just return the first (should not happen in normal use)
       return batchResponse.responses[0]
     }
     throw new Error("No response in batch")
