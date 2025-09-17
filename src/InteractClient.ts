@@ -314,6 +314,11 @@ export class InteractClient {
     return this.sessionState.isValid && !!this.sessionState.sessionId
   }
 
+  // Public method for batch builders to check if logging is enabled
+  isLoggingEnabled(): boolean {
+    return !!this.config.enableLogging
+  }
+
   // Check if we have a valid session that doesn't need startSession
   private shouldSkipStartSession(): boolean {
     if (!this.isSessionValid()) return false
@@ -335,52 +340,6 @@ export class InteractClient {
       audience: undefined,
     }
     this.clearPersistedSession()
-  }
-
-  /**
-   * Debug method to help troubleshoot session recovery issues
-   * Use this to understand why session recovery might not be working
-   */
-  debugSessionState(): void {
-    const storedAudience = this.getStoredAudience()
-
-    console.log("🔍 Session Debug Information:")
-    console.log("   Session ID:", this.sessionState.sessionId)
-    console.log("   Session Valid:", this.sessionState.isValid)
-    console.log("   Has Stored Audience:", !!storedAudience)
-    console.log("   Last Activity:", this.sessionState.lastActivity?.toISOString())
-
-    if (storedAudience) {
-      console.log("   Audience Level:", storedAudience.audienceLevel)
-      console.log("   Audience IDs:", storedAudience.audienceId)
-    } else {
-      console.log("   ❌ No audience stored - recovery will fail!")
-      console.log("   📝 Solutions:")
-      console.log("      • Use startSession(audience) instead of setSessionId()")
-      console.log("      • Call setSession(sessionId, audience) with both parameters")
-      console.log("      • Provide audience parameter to getOffers()")
-    }
-
-    // Check sessionStorage persistence
-    if (this.config.persistSession && this.isBrowser()) {
-      try {
-        const stored = window.sessionStorage.getItem(this.config.sessionStorageKey!)
-        if (stored) {
-          const sessionData = JSON.parse(stored)
-          console.log("   💾 Persisted Session:", sessionData.sessionId)
-          console.log("   💾 Persisted Audience:", !!sessionData.audience)
-        } else {
-          console.log("   💾 No persisted session data found")
-        }
-      } catch (error) {
-        console.log("   💾 Error reading persisted session:", error)
-      }
-    } else {
-      console.log("   💾 Session persistence disabled or not in browser")
-    }
-
-    console.log("   ⚙️  Persistence Enabled:", this.config.persistSession)
-    console.log("   📋 Logging Enabled:", this.config.enableLogging)
   }
 
   // Helper methods for default audience configurations
@@ -407,43 +366,53 @@ export class InteractClient {
   }
 
   // Check if response indicates session is invalid or expired
-  private isSessionInvalid(response: BatchResponse): boolean {
+  // Made public so batch builders can use it for session recovery
+  isSessionInvalid(response: BatchResponse): boolean {
     // Check batch-level status code
     if (response.batchStatusCode === 2) {
+      if (this.config.enableLogging) {
+        console.warn("Session invalid: batchStatusCode === 2", response)
+      }
       return true
     }
 
     // Check individual response status codes and messages
-    return (
+    const found =
       response.responses?.some(r => {
-        // Status code 2 typically indicates session issues
+        // Status code 2 always triggers session invalidation
         if (r.statusCode === 2) {
-          // Check for specific session-related error messages
-          return (
-            r.messages?.some(m => {
-              if (m.msgLevel === 2 && m.msgCode === 1) {
-                const msgLower = m.msg.toLowerCase()
-                return (
-                  msgLower.includes("invalid session id") ||
-                  msgLower.includes("session id") ||
-                  msgLower.includes("session expired") ||
-                  msgLower.includes("session timeout")
-                )
-              }
-              return false
-            }) || false
-          )
+          if (this.config.enableLogging) {
+            console.warn("Session invalid: statusCode === 2", r)
+          }
+          return true
         }
-        return false
+        // Fallback: check for specific session-related error messages
+        return (
+          r.messages?.some(m => {
+            if (m.msgLevel === 2 && m.msgCode === 1) {
+              const msgLower = m.msg.toLowerCase()
+              return (
+                msgLower.includes("invalid session id") ||
+                msgLower.includes("session id") ||
+                msgLower.includes("session expired") ||
+                msgLower.includes("session timeout")
+              )
+            }
+            return false
+          }) || false
+        )
       }) || false
-    )
+    if (found && this.config.enableLogging) {
+      console.warn("Session invalid detected in response", response)
+    }
+    return found
   }
 
   // Execute batch with automatic session retry and recovery
   async executeBatchWithRetry(
     sessionId: string | null,
     commands: Command[],
-    audience?: AudienceConfig,
+    audience?: AudienceConfig | undefined,
     maxRetries: number = 1,
   ): Promise<BatchResponse> {
     let currentSessionId = sessionId || this.sessionState.sessionId
@@ -453,84 +422,106 @@ export class InteractClient {
       try {
         const response = await this._executeBatch(currentSessionId, commands)
 
+        // Find the first real (non-synthetic) response
+        const realResponse = response.responses?.find(r => !r._synthetic) || response.responses?.[0]
+
         // Update session ID if returned
-        if (response.responses?.[0]?.sessionId) {
-          this.setSessionId(response.responses[0].sessionId)
+        if (realResponse?.sessionId) {
+          // Check if commands had a startSession with custom sessionId
+          const startSessionCmd = commands.find(cmd => cmd.action === "startSession")
+          const customSessionId = startSessionCmd?.customSessionId
+
+          // Use custom sessionId if provided, otherwise use server response
+          const sessionIdToStore = customSessionId !== undefined ? customSessionId : realResponse.sessionId
+          // Store both session ID and audience for future recovery
+          this.setSession(sessionIdToStore, audience)
         }
 
-        // Check if session is invalid
-        if (this.isSessionInvalid(response) && attempt < maxRetries) {
+        // If session is invalid and we can retry, attempt recovery
+        if (this.isSessionInvalid({ ...response, responses: [realResponse] }) && attempt < maxRetries) {
           if (this.config.enableLogging) {
             console.warn("Session expired, recovering with new session and retrying batch...")
           }
 
-          // Clear invalid session from client state
           this.clearSession()
 
-          // If we have audience config, recover by prepending startSession to the batch
-          if (audience) {
+          if (audience && "audienceLevel" in audience) {
             if (this.config.enableLogging) {
               console.log("Session recovery: Starting new session with audience:", audience.audienceLevel)
             }
 
             // Create a new batch with startSession command first, then original commands
+            // Check if original commands had a startSession with custom sessionId
+            const originalStartSession = commands.find(cmd => cmd.action === "startSession")
+            const customSessionId = originalStartSession?.customSessionId
+
+            const recoveryStartSession: Command = {
+              action: "startSession",
+              ic: this.config.interactiveChannel,
+              audienceID: this.convertAudienceToArray(audience),
+              audienceLevel: audience.audienceLevel,
+              relyOnExistingSession: false, // Force new session since old one expired
+            }
+
+            // Preserve custom sessionId if it existed
+            if (customSessionId !== undefined) {
+              recoveryStartSession.customSessionId = customSessionId
+            }
+
             const recoveryCommands: Command[] = [
-              {
-                action: "startSession",
-                ic: this.config.interactiveChannel,
-                audienceID: this.convertAudienceToArray(audience),
-                audienceLevel: audience.audienceLevel,
-                relyOnExistingSession: false, // Force new session since old one expired
-              },
-              ...commands, // Add original commands after startSession
+              recoveryStartSession,
+              ...commands.filter(cmd => cmd.action !== "startSession"), // Add non-startSession commands
             ]
 
             if (this.config.enableLogging) {
               console.log("Executing recovery batch with startSession + original commands...")
             }
 
-            // Execute the recovery batch (use the expired sessionId since startSession will create new one)
-            const recoveryResponse = await this._executeBatch(currentSessionId, recoveryCommands)
+            // Execute the recovery batch (use null sessionId to let startSession create new one)
+            const recoveryResponse = await this._executeBatch(null, recoveryCommands)
 
             // Update session ID from the startSession response
             if (recoveryResponse.responses?.[0]?.sessionId) {
-              const newSessionId = recoveryResponse.responses[0].sessionId
+              // Use custom sessionId if provided, otherwise use server response
+              const sessionIdToStore =
+                customSessionId !== undefined ? customSessionId : recoveryResponse.responses[0].sessionId
               // Store both session and audience for future recovery
-              this.setSession(newSessionId, audience)
+              this.setSession(sessionIdToStore, audience)
 
               if (this.config.enableLogging) {
-                console.log(`Session recovered: ${currentSessionId} -> ${newSessionId}`)
+                console.log(`Session recovered: ${currentSessionId} -> ${sessionIdToStore}`)
               }
             }
 
             // Return the recovery response (which includes results from all commands)
             return recoveryResponse
-          }
+          } else {
+            if (this.config.enableLogging) {
+              console.error("❌ Session recovery failed: No audience configuration available")
+              console.error("   - Invalid session ID:", currentSessionId)
+              console.error("   - Stored audience:", this.getStoredAudience())
+              console.error("   - Session state:", {
+                sessionId: this.sessionState.sessionId,
+                isValid: this.sessionState.isValid,
+                hasAudience: !!this.sessionState.audience,
+                lastActivity: this.sessionState.lastActivity,
+              })
+              console.error("   - This usually means the session was set externally without storing audience")
+              console.error("   - Solutions:")
+              console.error("     1. Call startSession(audience) instead of setSessionId()")
+              console.error("     2. Provide audience parameter to getOffers()")
+              console.error("     3. Call setSession(sessionId, audience) to store both")
+            }
 
-          if (this.config.enableLogging) {
-            console.error("❌ Session recovery failed: No audience configuration available")
-            console.error("   - Invalid session ID:", currentSessionId)
-            console.error("   - Stored audience:", this.getStoredAudience())
-            console.error("   - Session state:", {
-              sessionId: this.sessionState.sessionId,
-              isValid: this.sessionState.isValid,
-              hasAudience: !!this.sessionState.audience,
-              lastActivity: this.sessionState.lastActivity,
-            })
-            console.error("   - This usually means the session was set externally without storing audience")
-            console.error("   - Solutions:")
-            console.error("     1. Call startSession(audience) instead of setSessionId()")
-            console.error("     2. Provide audience parameter to getOffers()")
-            console.error("     3. Call setSession(sessionId, audience) to store both")
+            throw new Error(
+              "Cannot recover session: no audience configuration provided. " +
+                "This usually happens when the session expired and no audience was stored. " +
+                "Try calling startSession(audience) first or provide an audience parameter.",
+            )
           }
-
-          throw new Error(
-            "Cannot recover session: no audience configuration provided. " +
-              "This usually happens when the session expired and no audience was stored. " +
-              "Try calling startSession(audience) first or provide an audience parameter.",
-          )
         }
 
+        // If this was a successful response or no retry needed, return it
         return response
       } catch (error) {
         if (attempt >= maxRetries) {
@@ -560,11 +551,12 @@ export class InteractClient {
     }
 
     // Filter out startSession commands if we already have a valid session
+    // BUT: if sessionId is null, it means we want to create a fresh session (like during recovery)
     // Track filtered command positions for synthetic response injection
     const filteredCommandsInfo: { command: Command; originalIndex: number }[] = []
     const filteredCommands: Command[] = []
 
-    if (this.shouldSkipStartSession()) {
+    if (sessionId !== null && this.shouldSkipStartSession()) {
       commands.forEach((cmd, index) => {
         if (cmd.action === "startSession") {
           filteredCommandsInfo.push({ command: cmd, originalIndex: index })
@@ -760,8 +752,10 @@ export class InteractClient {
     )
 
     if (response.sessionId) {
+      // Use custom sessionId if provided, otherwise use server response
+      const sessionIdToStore = sessionId !== undefined && sessionId !== null ? sessionId : response.sessionId
       // Store both session and audience for session recovery
-      this.setSession(response.sessionId, audienceConfig)
+      this.setSession(sessionIdToStore, audienceConfig)
     }
 
     return response
@@ -777,20 +771,16 @@ export class InteractClient {
       audience?: AudienceConfig
     },
   ): Promise<InteractResponse> {
+    if (this.config.enableLogging) {
+      console.log("🚨🚨🚨 ENHANCED getOffers method called! 🚨🚨🚨")
+    }
+
     const { sessionId: explicitSessionId, autoManageSession = true, audience } = options || {}
 
     let sessionId = explicitSessionId || this.getSessionId()
 
-    // Auto-manage session if enabled and no session exists
-    if (!sessionId && autoManageSession) {
-      // Use provided audience or fall back to stored audience
-      const targetAudience = audience || this.getStoredAudience()
-      if (targetAudience) {
-        const sessionResponse = await this.startSession(targetAudience)
-        sessionId = sessionResponse.sessionId || null
-      }
-    }
-
+    // Don't start sessions preemptively - always try the request first
+    // Let the retry logic in executeBatchWithRetry handle session recovery if needed
     if (!sessionId) {
       throw new Error(
         "No session available. Start a session first with startSession(audience) or provide audience parameter.",
@@ -808,15 +798,12 @@ export class InteractClient {
     // Use provided audience or fall back to stored audience for session recovery
     const recoveryAudience = audience || this.getStoredAudience()
 
-    if (this.config.enableLogging) {
-      console.log("getOffers: sessionId =", sessionId)
-      console.log("getOffers: recoveryAudience available =", !!recoveryAudience)
-      if (!recoveryAudience) {
-        console.warn("getOffers: No recovery audience available - session recovery will fail if session is invalid")
-      }
+    if (this.config.enableLogging && !recoveryAudience) {
+      console.warn("⚠️ getOffers: No recovery audience available - session recovery will fail if session is invalid")
     }
 
     const batchResponse = await this.executeBatchWithRetry(sessionId, commands, recoveryAudience)
+
     return this.extractFirstResponse(batchResponse)
   }
 
@@ -1188,9 +1175,36 @@ export class BatchBuilder {
 
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
 
-    // If batch contains startSession, update client's session ID
+    // If batch contains startSession, update client's session ID and store audience for recovery
     if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
-      this.client.setSessionId(result.responses[0].sessionId)
+      const startSessionCmd = this.commands.find(cmd => cmd.action === "startSession")
+      if (
+        startSessionCmd &&
+        startSessionCmd.audienceLevel &&
+        startSessionCmd.audienceID &&
+        startSessionCmd.audienceID.length > 0
+      ) {
+        // Extract audience information from startSession command for recovery
+        const audience: AudienceConfig = {
+          audienceLevel: startSessionCmd.audienceLevel,
+          audienceId: {
+            name: startSessionCmd.audienceID[0].n || "VisitorID",
+            value: startSessionCmd.audienceID[0].v || "0",
+            type: startSessionCmd.audienceID[0].t || "string",
+          },
+        }
+        // Store session ID and audience for session recovery
+        // Use custom sessionId if provided, otherwise use server response
+        const sessionIdToStore =
+          startSessionCmd.customSessionId !== undefined
+            ? startSessionCmd.customSessionId
+            : result.responses[0].sessionId
+        this.client.setSession(sessionIdToStore, audience)
+      } else {
+        // Fallback if audience extraction fails
+        const sessionIdToStore = this.commands.find(cmd => cmd.action === "startSession")?.customSessionId
+        this.client.setSessionId(sessionIdToStore !== undefined ? sessionIdToStore : result.responses[0].sessionId)
+      }
     }
 
     this.commands = [] // Reset for reuse
@@ -1280,36 +1294,6 @@ export class ExecutableBatchBuilder {
     return this
   }
 
-  // Method overloads for getOffers (matching main client)
-  getOffers(interactionPoint: string): Promise<BatchResponse>
-  getOffers(interactionPoint: string, numberRequested?: number): Promise<BatchResponse>
-  getOffers(
-    interactionPoint: string,
-    numberRequested?: number,
-    options?: {
-      sessionId?: string | null
-      autoManageSession?: boolean
-      audience?: AudienceConfig | InteractAudience
-    },
-  ): Promise<BatchResponse>
-  getOffers(
-    interactionPoint: string,
-    numberRequested: number = 1,
-    options?: {
-      sessionId?: string | null
-      autoManageSession?: boolean
-      audience?: AudienceConfig | InteractAudience
-    },
-  ): Promise<BatchResponse> {
-    this.commands.push({
-      action: "getOffers",
-      ip: interactionPoint,
-      numberRequested,
-      parameters: options?.sessionId ? [{ n: "sessionId", v: options.sessionId, t: "string" }] : undefined,
-    })
-    return this.execute()
-  }
-
   // Method overloads for postEvent (matching main client)
   postEvent(eventName: string): Promise<BatchResponse>
   postEvent(eventName: string, parameters?: NameValuePair[]): Promise<BatchResponse>
@@ -1357,6 +1341,82 @@ export class ExecutableBatchBuilder {
     ])
   }
 
+  // Get offers and auto-execute with session recovery
+  async getOffers(interactionPoint: string, numberRequested: number = 1): Promise<BatchResponse> {
+    this.commands.push({
+      action: "getOffers",
+      ip: interactionPoint,
+      numberRequested,
+    })
+
+    const maxRetries = 1
+    let attempt = 0
+
+    while (attempt <= maxRetries) {
+      attempt++
+
+      if (this.client.isLoggingEnabled()) {
+        console.log(`🔧 ExecutableBatchBuilder.getOffers: Attempt ${attempt}/${maxRetries + 1}`)
+      }
+
+      const result = await this.execute()
+
+      // Check if session is invalid and we can retry
+      if (this.client.isSessionInvalid(result) && attempt <= maxRetries) {
+        // Get stored audience for recovery
+        const storedAudience = this.client.getStoredAudience()
+        if (storedAudience) {
+          // Find the original startSession command to preserve custom sessionId
+          const originalStartSession = this.commands.find(cmd => cmd.action === "startSession")
+          const customSessionId = originalStartSession?.customSessionId
+
+          // Remove any existing startSession commands to avoid duplicates
+          this.commands = this.commands.filter(cmd => cmd.action !== "startSession")
+
+          // Prepend startSession command to the batch, preserving custom sessionId
+          const recoveryStartSession: any = {
+            action: "startSession",
+            audienceLevel: storedAudience.audienceLevel,
+            audienceID: [
+              {
+                n: storedAudience.audienceId.name,
+                v: storedAudience.audienceId.value,
+                t: storedAudience.audienceId.type,
+              },
+            ],
+            parameters: [],
+            relyOnExistingSession: false,
+            debug: false,
+          }
+
+          // If there was a custom sessionId, preserve it
+          if (customSessionId !== undefined) {
+            recoveryStartSession.customSessionId = customSessionId
+          }
+
+          this.commands.unshift(recoveryStartSession)
+
+          // Continue the retry loop
+          continue
+        } else {
+          if (this.client.isLoggingEnabled()) {
+            console.error("❌ ExecutableBatchBuilder: No stored audience available for recovery")
+          }
+          break
+        }
+      }
+
+      // Success or non-recoverable error
+      return result
+    }
+
+    // If we get here, all retries failed - return the last result
+    if (this.client.isLoggingEnabled()) {
+      console.error("❌ ExecutableBatchBuilder: All retry attempts failed")
+    }
+    return await this.execute()
+  }
+
   endSession(): Promise<BatchResponse> {
     this.commands.push({
       action: "endSession",
@@ -1365,21 +1425,82 @@ export class ExecutableBatchBuilder {
   }
 
   private async execute(): Promise<BatchResponse> {
-    // Use same session precedence logic as BatchBuilder
+    // Check if we have an existing session and the batch contains startSession
+    const hasExistingSession = !!this.client.getSessionId()
+    const hasStartSession = this.commands.some(cmd => cmd.action === "startSession")
+
+    if (hasExistingSession && hasStartSession) {
+      if (this.client.isLoggingEnabled()) {
+        console.log("🔧 ExecutableBatchBuilder: Existing session found, trying without startSession first")
+      }
+
+      // First attempt: try without startSession commands (use existing session)
+      const commandsWithoutStartSession = this.commands.filter(cmd => cmd.action !== "startSession")
+      const existingSessionId = this.client.getSessionId()
+
+      if (commandsWithoutStartSession.length > 0) {
+        const firstResult = await this.client._executeBatch(existingSessionId, commandsWithoutStartSession)
+
+        // If successful, return the result
+        if (!this.client.isSessionInvalid(firstResult)) {
+          if (this.client.isLoggingEnabled()) {
+            console.log("✅ ExecutableBatchBuilder: Request succeeded with existing session")
+          }
+          return firstResult
+        }
+
+        // If session is invalid, clear it and retry with full batch including startSession
+        if (this.client.isLoggingEnabled()) {
+          console.log("🔄 ExecutableBatchBuilder: Session invalid, clearing and retrying with startSession")
+        }
+        // Clear the invalid session so subsequent calls don't keep trying it
+        this.client.clearSession()
+      }
+    }
+
+    // Default behavior: execute all commands as-is
+    // If the first command is startSession, use null sessionId to let it create a new session
     const effectiveSessionId =
-      this.commands.length > 0 &&
-      this.commands[0].action === "startSession" &&
-      this.commands[0].customSessionId !== undefined
-        ? this.commands[0].customSessionId
+      this.commands.length > 0 && this.commands[0].action === "startSession"
+        ? this.commands[0].customSessionId !== undefined
+          ? this.commands[0].customSessionId
+          : null // Let startSession create a new session
         : this.sessionId !== undefined
         ? this.sessionId
         : this.client.getSessionId()
 
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
 
-    // If batch contains startSession, update client's session ID
+    // If batch contains startSession, update client's session ID and store audience for recovery
     if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
-      this.client.setSessionId(result.responses[0].sessionId)
+      const startSessionCmd = this.commands.find(cmd => cmd.action === "startSession")
+      if (
+        startSessionCmd &&
+        startSessionCmd.audienceLevel &&
+        startSessionCmd.audienceID &&
+        startSessionCmd.audienceID.length > 0
+      ) {
+        // Extract audience information from startSession command for recovery
+        const audience: AudienceConfig = {
+          audienceLevel: startSessionCmd.audienceLevel,
+          audienceId: {
+            name: startSessionCmd.audienceID[0].n || "VisitorID",
+            value: startSessionCmd.audienceID[0].v || "0",
+            type: startSessionCmd.audienceID[0].t || "string",
+          },
+        }
+        // Store session ID and audience for session recovery
+        // Use custom sessionId if provided, otherwise use server response
+        const sessionIdToStore =
+          startSessionCmd.customSessionId !== undefined
+            ? startSessionCmd.customSessionId
+            : result.responses[0].sessionId
+        this.client.setSession(sessionIdToStore, audience)
+      } else {
+        // Fallback if audience extraction fails
+        const sessionIdToStore = this.commands.find(cmd => cmd.action === "startSession")?.customSessionId
+        this.client.setSessionId(sessionIdToStore !== undefined ? sessionIdToStore : result.responses[0].sessionId)
+      }
     }
 
     return result
