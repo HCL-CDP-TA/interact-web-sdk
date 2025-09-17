@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.2](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.6.1...v2.6.2) (2025-09-17)
+
+
+### Bug Fixes
+
+* session management and retry fixes ([e8407e2](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/e8407e20c112fe973b0dae17c70413598fc6b011))
+
 ## [2.6.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.6.0...v2.6.1) (2025-09-15)
 
 
