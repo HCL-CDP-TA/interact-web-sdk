@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.3](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.6.2...v2.6.3) (2025-10-07)
+
+
+### Bug Fixes
+
+* narrow session expiry checks ([3644482](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/36444820fa41a9213b9c36c441a53cc82b0c10ac))
+
 ## [2.6.2](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.6.1...v2.6.2) (2025-09-17)
 
 
