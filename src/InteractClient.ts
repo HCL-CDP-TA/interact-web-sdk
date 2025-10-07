@@ -392,10 +392,12 @@ export class InteractClient {
             if (m.msgLevel === 2 && m.msgCode === 1) {
               const msgLower = m.msg.toLowerCase()
               return (
-                msgLower.includes("invalid session id") ||
-                msgLower.includes("session id") ||
+                // Specific pattern for invalid/expired session IDs (not other errors like invalid IP)
+                msgLower.includes("request received an invalid session id") ||
                 msgLower.includes("session expired") ||
-                msgLower.includes("session timeout")
+                msgLower.includes("session timeout") ||
+                msgLower.includes("session has expired") ||
+                (msgLower.includes("invalid session") && !msgLower.includes("invalid ip"))
               )
             }
             return false
