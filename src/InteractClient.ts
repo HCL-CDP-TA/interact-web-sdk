@@ -1,6 +1,8 @@
 // HCL Interact SDK - Servlet API Compatible
 // Clean, opinionated TypeScript client with React integration
 
+import InteractApiError from "./InteractError"
+
 // Enums for type safety
 export enum InteractParamType {
   String = "string",
@@ -365,49 +367,50 @@ export class InteractClient {
     }
   }
 
+  // Helper method to check if a single message is a recoverable session error
+  private isRecoverableSessionError(message: string): boolean {
+    const msgLower = message.toLowerCase()
+    return (
+      msgLower.includes("request received an invalid session id") ||
+      msgLower.includes("session expired") ||
+      msgLower.includes("session timeout") ||
+      msgLower.includes("session has expired")
+    )
+  }
+
   // Check if response indicates session is invalid or expired
   // Made public so batch builders can use it for session recovery
   isSessionInvalid(response: BatchResponse): boolean {
-    // Check batch-level status code
-    if (response.batchStatusCode === 2) {
-      if (this.config.enableLogging) {
-        console.warn("Session invalid: batchStatusCode === 2", response)
-      }
-      return true
-    }
-
-    // Check individual response status codes and messages
+    // Check for specific session-related error messages
     const found =
       response.responses?.some(r => {
-        // Status code 2 always triggers session invalidation
-        if (r.statusCode === 2) {
-          if (this.config.enableLogging) {
-            console.warn("Session invalid: statusCode === 2", r)
-          }
-          return true
-        }
-        // Fallback: check for specific session-related error messages
         return (
           r.messages?.some(m => {
             if (m.msgLevel === 2 && m.msgCode === 1) {
-              const msgLower = m.msg.toLowerCase()
-              return (
-                // Specific pattern for invalid/expired session IDs (not other errors like invalid IP)
-                msgLower.includes("request received an invalid session id") ||
-                msgLower.includes("session expired") ||
-                msgLower.includes("session timeout") ||
-                msgLower.includes("session has expired") ||
-                (msgLower.includes("invalid session") && !msgLower.includes("invalid ip"))
-              )
+              return this.isRecoverableSessionError(m.msg)
             }
             return false
           }) || false
         )
       }) || false
-    if (found && this.config.enableLogging) {
-      console.warn("Session invalid detected in response", response)
-    }
+
     return found
+  }
+
+  // Check for non-recoverable errors and throw immediately (fail fast)
+  // Only session-related errors are recoverable, everything else should fail fast
+  private checkForNonRecoverableErrors(response: BatchResponse): void {
+    // Check each error message individually - if ANY error is non-recoverable, fail fast
+    for (const r of response.responses || []) {
+      for (const m of r.messages || []) {
+        if (m.msgLevel === 2) {
+          // If this error is NOT recoverable, fail fast immediately
+          if (!this.isRecoverableSessionError(m.msg)) {
+            throw new InteractApiError(400, "Configuration Error", m.msg)
+          }
+        }
+      }
+    }
   }
 
   // Execute batch with automatic session retry and recovery
@@ -452,14 +455,14 @@ export class InteractClient {
               console.log("Session recovery: Starting new session with audience:", audience.audienceLevel)
             }
 
-            // Create a new batch with startSession command first, then original commands
-            // Check if original commands had a startSession with custom sessionId
+            // Check if original commands had a startSession with custom sessionId and IC
             const originalStartSession = commands.find(cmd => cmd.action === "startSession")
             const customSessionId = originalStartSession?.customSessionId
+            const originalIC = originalStartSession?.ic || this.config.interactiveChannel
 
             const recoveryStartSession: Command = {
               action: "startSession",
-              ic: this.config.interactiveChannel,
+              ic: originalIC, // Preserve original IC
               audienceID: this.convertAudienceToArray(audience),
               audienceLevel: audience.audienceLevel,
               relyOnExistingSession: false, // Force new session since old one expired
@@ -655,11 +658,19 @@ export class InteractClient {
             }
           }
 
-          return {
+          const reconstructedResponse = {
             ...responseData,
             responses: reconstructedResponses,
           }
+
+          // Check for non-recoverable errors and fail fast
+          this.checkForNonRecoverableErrors(reconstructedResponse)
+
+          return reconstructedResponse
         }
+
+        // Check for non-recoverable errors and fail fast
+        this.checkForNonRecoverableErrors(responseData)
 
         return responseData
       } else {
