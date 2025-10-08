@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.6.3...v2.7.0) (2025-10-08)
+
+
+### Features
+
+* fast fail for non-recoverable config errors ([bff0551](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/bff055139c671275051f8399f4caa4418a6bb2e8))
+
 ## [2.6.3](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.6.2...v2.6.3) (2025-10-07)
 
 
