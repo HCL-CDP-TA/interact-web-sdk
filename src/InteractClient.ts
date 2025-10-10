@@ -764,11 +764,9 @@ export class InteractClient {
       options?.debug ?? false,
     )
 
-    if (response.sessionId) {
-      // Use custom sessionId if provided, otherwise use server response
-      const sessionIdToStore = sessionId !== undefined && sessionId !== null ? sessionId : response.sessionId
-      // Store both session and audience for session recovery
-      this.setSession(sessionIdToStore, audienceConfig)
+    if (response.sessionId && sessionId === undefined) {
+      // Only store session when managing internally (no explicit sessionId provided)
+      this.setSession(response.sessionId, audienceConfig)
     }
 
     return response
@@ -1191,12 +1189,14 @@ export class BatchBuilder {
 
     // If batch contains startSession, update client's session ID and store audience for recovery
     // Only update if we're managing sessions internally (no explicit sessionId provided)
+    const startSessionCmd = this.commands.find(cmd => cmd.action === "startSession")
+    const hasExternalSessionManagement = sessionId !== undefined || startSessionCmd?.customSessionId !== undefined
+
     if (
       this.commands.some(cmd => cmd.action === "startSession") &&
       result.responses?.[0]?.sessionId &&
-      sessionId === undefined
+      !hasExternalSessionManagement
     ) {
-      const startSessionCmd = this.commands.find(cmd => cmd.action === "startSession")
       if (
         startSessionCmd &&
         startSessionCmd.audienceLevel &&
