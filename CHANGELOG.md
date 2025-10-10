@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.3](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.2...v2.7.3) (2025-10-10)
+
+
+### Bug Fixes
+
+* external session management ([3e56fab](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/3e56fab3415ba396abf4a434f1a598d9dab4e846))
+
 ## [2.7.2](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.1...v2.7.2) (2025-10-10)
 
 
