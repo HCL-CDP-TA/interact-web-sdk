@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.2](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.1...v2.7.2) (2025-10-10)
+
+
+### Bug Fixes
+
+* ignore session storage when not managing session ([5f3c23e](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/5f3c23e484589f07abfccdd4ed757bed605807e5))
+
 ## [2.7.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.0...v2.7.1) (2025-10-10)
 
 
