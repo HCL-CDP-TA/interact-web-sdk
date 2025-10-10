@@ -430,8 +430,8 @@ export class InteractClient {
         // Find the first real (non-synthetic) response
         const realResponse = response.responses?.find(r => !r._synthetic) || response.responses?.[0]
 
-        // Update session ID if returned
-        if (realResponse?.sessionId) {
+        // Update session ID if returned and we're managing sessions internally
+        if (realResponse?.sessionId && !sessionId) {
           // Check if commands had a startSession with custom sessionId
           const startSessionCmd = commands.find(cmd => cmd.action === "startSession")
           const customSessionId = startSessionCmd?.customSessionId
@@ -485,8 +485,8 @@ export class InteractClient {
             // Execute the recovery batch (use null sessionId to let startSession create new one)
             const recoveryResponse = await this._executeBatch(null, recoveryCommands)
 
-            // Update session ID from the startSession response
-            if (recoveryResponse.responses?.[0]?.sessionId) {
+            // Update session ID from the startSession response (only if managing sessions internally)
+            if (recoveryResponse.responses?.[0]?.sessionId && !sessionId) {
               // Use custom sessionId if provided, otherwise use server response
               const sessionIdToStore =
                 customSessionId !== undefined ? customSessionId : recoveryResponse.responses[0].sessionId
@@ -924,8 +924,9 @@ export class InteractClient {
     const batchResponse = await this._executeBatch(sessionId, commands)
     const response = this.extractFirstResponse(batchResponse)
 
-    // Update the current session ID if the command was successful
-    if (response.sessionId) {
+    // Only update internal session storage if no explicit sessionId was provided
+    // If sessionId was supplied, treat it as external session management
+    if (response.sessionId && !sessionId) {
       this.setSessionId(response.sessionId)
     }
 
@@ -1189,7 +1190,12 @@ export class BatchBuilder {
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
 
     // If batch contains startSession, update client's session ID and store audience for recovery
-    if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
+    // Only update if we're managing sessions internally (no explicit sessionId provided)
+    if (
+      this.commands.some(cmd => cmd.action === "startSession") &&
+      result.responses?.[0]?.sessionId &&
+      sessionId === undefined
+    ) {
       const startSessionCmd = this.commands.find(cmd => cmd.action === "startSession")
       if (
         startSessionCmd &&
