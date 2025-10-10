@@ -102,6 +102,7 @@ export interface SessionState {
   isValid: boolean
   lastActivity: Date
   audience?: AudienceConfig // Store audience for session recovery
+  externallyManaged?: boolean // Flag to indicate external session management
 }
 
 export interface InteractMessage {
@@ -277,32 +278,34 @@ export class InteractClient {
     return this.sessionState.sessionId
   }
 
-  setSessionId(sessionId: string | null): void {
+  setSessionId(sessionId: string | null, externallyManaged?: boolean): void {
     this.sessionState.sessionId = sessionId
     this.sessionState.isValid = !!sessionId
     this.sessionState.lastActivity = new Date()
+    this.sessionState.externallyManaged = externallyManaged || false
 
-    // Persist session to storage
-    if (sessionId) {
+    // Only persist session to storage if we're managing sessions internally
+    if (sessionId && !this.sessionState.externallyManaged) {
       this.saveSessionToStorage()
-    } else {
+    } else if (!sessionId) {
       this.clearPersistedSession()
     }
   }
 
   // Set both session and audience for session recovery
-  setSession(sessionId: string | null, audience?: AudienceConfig): void {
+  setSession(sessionId: string | null, audience?: AudienceConfig, externallyManaged?: boolean): void {
     this.sessionState.sessionId = sessionId
     this.sessionState.isValid = !!sessionId
     this.sessionState.lastActivity = new Date()
+    this.sessionState.externallyManaged = externallyManaged || false
     if (audience) {
       this.sessionState.audience = audience
     }
 
-    // Persist session to storage
-    if (sessionId) {
+    // Only persist session to storage if we're managing sessions internally
+    if (sessionId && !this.sessionState.externallyManaged) {
       this.saveSessionToStorage()
-    } else {
+    } else if (!sessionId) {
       this.clearPersistedSession()
     }
   }
@@ -1218,11 +1221,14 @@ export class BatchBuilder {
           startSessionCmd.customSessionId !== undefined
             ? startSessionCmd.customSessionId
             : result.responses[0].sessionId
-        this.client.setSession(sessionIdToStore, audience)
+        this.client.setSession(sessionIdToStore, audience, hasExternalSessionManagement)
       } else {
         // Fallback if audience extraction fails
         const sessionIdToStore = this.commands.find(cmd => cmd.action === "startSession")?.customSessionId
-        this.client.setSessionId(sessionIdToStore !== undefined ? sessionIdToStore : result.responses[0].sessionId)
+        this.client.setSessionId(
+          sessionIdToStore !== undefined ? sessionIdToStore : result.responses[0].sessionId,
+          hasExternalSessionManagement,
+        )
       }
     }
 
@@ -1491,8 +1497,15 @@ export class ExecutableBatchBuilder {
     const result = await this.client._executeBatch(effectiveSessionId, this.commands)
 
     // If batch contains startSession, update client's session ID and store audience for recovery
-    if (this.commands.some(cmd => cmd.action === "startSession") && result.responses?.[0]?.sessionId) {
-      const startSessionCmd = this.commands.find(cmd => cmd.action === "startSession")
+    // Only update if we're managing sessions internally (no explicit sessionId provided)
+    const startSessionCmd = this.commands.find(cmd => cmd.action === "startSession")
+    const hasExternalSessionManagement = this.sessionId !== undefined || startSessionCmd?.customSessionId !== undefined
+
+    if (
+      this.commands.some(cmd => cmd.action === "startSession") &&
+      result.responses?.[0]?.sessionId &&
+      !hasExternalSessionManagement
+    ) {
       if (
         startSessionCmd &&
         startSessionCmd.audienceLevel &&
@@ -1514,11 +1527,14 @@ export class ExecutableBatchBuilder {
           startSessionCmd.customSessionId !== undefined
             ? startSessionCmd.customSessionId
             : result.responses[0].sessionId
-        this.client.setSession(sessionIdToStore, audience)
+        this.client.setSession(sessionIdToStore, audience, hasExternalSessionManagement)
       } else {
         // Fallback if audience extraction fails
         const sessionIdToStore = this.commands.find(cmd => cmd.action === "startSession")?.customSessionId
-        this.client.setSessionId(sessionIdToStore !== undefined ? sessionIdToStore : result.responses[0].sessionId)
+        this.client.setSessionId(
+          sessionIdToStore !== undefined ? sessionIdToStore : result.responses[0].sessionId,
+          hasExternalSessionManagement,
+        )
       }
     }
 
