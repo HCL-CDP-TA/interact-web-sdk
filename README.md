@@ -606,6 +606,65 @@ await client.endSession(client.getSessionId())
 client.clearSession()
 ```
 
+#### External Session Management
+
+The SDK supports external session management for scenarios like server-side rendering, custom session stores, or when you need full control over session lifecycle:
+
+```typescript
+// Method 1: Start session with external session ID
+const customSessionId = "my-custom-session-id"
+const audience = InteractClient.createAudience(
+  InteractAudienceLevel.Visitor,
+  "VisitorID",
+  "visitor123",
+  InteractParamType.String,
+)
+
+// Pass custom session ID as second parameter
+await client.startSession(audience, customSessionId)
+
+// The SDK won't automatically store/manage this session
+// You must explicitly pass it to subsequent calls
+await client.getOffers("HomePage", 3, {
+  sessionId: customSessionId,
+})
+
+// Method 2: Set external session in SDK for convenience
+// Store external session ID in SDK but mark as externally managed
+client.setSession(customSessionId, audience, true) // true = externally managed
+
+// Now you can use SDK's convenience without automatic persistence
+await client.getOffers("HomePage", 3) // Uses stored external session
+await client.postEvent("page_view") // Also uses stored external session
+
+// Method 3: Fully manual control
+// Don't store in SDK at all, pass sessionId every time
+await client.getOffers("HomePage", 3, { sessionId: customSessionId })
+await client.postEvent("purchase", params, { sessionId: customSessionId })
+
+// Comparison: Internal vs External Session Management
+//
+// Internal (default):
+// - SDK stores session in sessionStorage
+// - Automatic persistence across page refreshes
+// - Automatic session recovery on expiry
+// - Best for: Single-page apps, browser-based apps
+//
+// External:
+// - You control the session ID
+// - No automatic persistence
+// - Session stored in your custom store (Redis, etc.)
+// - Best for: Server-side rendering, microservices, custom session stores
+```
+
+**When to use External Session Management:**
+
+- **Server-Side Rendering (SSR)**: Session managed by server, passed to client
+- **Custom Session Stores**: Using Redis, database, or other session management
+- **Microservices**: Session shared across multiple services
+- **Testing**: Predictable session IDs for integration tests
+- **Multi-Tab Sync**: Custom logic to sync sessions across browser tabs
+
 #### Session Expiration Handling
 
 The SDK automatically handles session expiration responses like this:
@@ -635,6 +694,30 @@ When this occurs, the SDK:
 3. **Prepends** a `startSession` command to the original batch
 4. **Retries** the entire operation seamlessly
 5. **Updates** the stored session ID for future calls
+
+**Important: External Session Recovery**
+
+When using external session management (passing explicit `sessionId` to methods), the SDK preserves your session ID during recovery:
+
+```typescript
+// Your external session
+const mySessionId = "my-custom-session-123"
+
+// Call with external session ID
+await client.getOffers("HomePage", 3, {
+  sessionId: mySessionId,
+  audience: myAudience, // Required for recovery!
+})
+
+// If session expires:
+// 1. SDK detects expiry
+// 2. Creates startSession with YOUR session ID (mySessionId)
+// 3. Re-establishes session using same ID
+// 4. Retries getOffers automatically
+// 5. Your external session ID is preserved throughout
+```
+
+**Key Point:** Always provide the `audience` parameter when using external session IDs to enable automatic recovery. Without it, the SDK cannot re-establish the expired session.
 
 ````
 

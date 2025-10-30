@@ -426,6 +426,9 @@ export class InteractClient {
     let currentSessionId = sessionId || this.sessionState.sessionId
     let attempt = 0
 
+    // Track if the sessionId was explicitly provided (external management)
+    const isExternalSessionId = sessionId !== null && sessionId !== undefined
+
     while (attempt <= maxRetries) {
       try {
         const response = await this._executeBatch(currentSessionId, commands)
@@ -463,6 +466,13 @@ export class InteractClient {
             const customSessionId = originalStartSession?.customSessionId
             const originalIC = originalStartSession?.ic || this.config.interactiveChannel
 
+            // Determine which session ID to use for recovery:
+            // 1. If there was a customSessionId in commands, use that
+            // 2. If sessionId was explicitly passed to this method (external), use that
+            // 3. Otherwise, let server generate new one (null)
+            const recoverySessionId =
+              customSessionId !== undefined ? customSessionId : isExternalSessionId ? sessionId : null
+
             const recoveryStartSession: Command = {
               action: "startSession",
               ic: originalIC, // Preserve original IC
@@ -471,9 +481,9 @@ export class InteractClient {
               relyOnExistingSession: false, // Force new session since old one expired
             }
 
-            // Preserve custom sessionId if it existed
-            if (customSessionId !== undefined) {
-              recoveryStartSession.customSessionId = customSessionId
+            // Preserve the session ID for recovery (either custom or external)
+            if (recoverySessionId !== null) {
+              recoveryStartSession.customSessionId = recoverySessionId
             }
 
             const recoveryCommands: Command[] = [
@@ -483,25 +493,45 @@ export class InteractClient {
 
             if (this.config.enableLogging) {
               console.log("Executing recovery batch with startSession + original commands...")
+              if (recoverySessionId !== null) {
+                console.log(`Using external session ID for recovery: ${recoverySessionId}`)
+              }
             }
 
-            // Execute the recovery batch (use null sessionId to let startSession create new one)
-            const recoveryResponse = await this._executeBatch(null, recoveryCommands)
+            // Execute the recovery batch with the appropriate session ID
+            const recoveryResponse = await this._executeBatch(recoverySessionId, recoveryCommands)
 
             // Update session ID from the startSession response (only if managing sessions internally)
-            if (recoveryResponse.responses?.[0]?.sessionId && !sessionId) {
-              // Use custom sessionId if provided, otherwise use server response
+            if (recoveryResponse.responses?.[0]?.sessionId && !isExternalSessionId) {
+              // Use the recovery session ID if we had one, otherwise use server response
               const sessionIdToStore =
-                customSessionId !== undefined ? customSessionId : recoveryResponse.responses[0].sessionId
+                recoverySessionId !== null ? recoverySessionId : recoveryResponse.responses[0].sessionId
               // Store both session and audience for future recovery
               this.setSession(sessionIdToStore, audience)
 
               if (this.config.enableLogging) {
                 console.log(`Session recovered: ${currentSessionId} -> ${sessionIdToStore}`)
               }
+            } else if (this.config.enableLogging && isExternalSessionId) {
+              console.log(`External session recovered: ${recoverySessionId}`)
+              console.log(`Note: External sessions are not stored in SDK state`)
             }
 
-            // Return the recovery response (which includes results from all commands)
+            // Increment attempt counter for recovery
+            attempt++
+
+            // Check if recovery response is also invalid (should not happen, but handle it)
+            const recoveryRealResponse =
+              recoveryResponse.responses?.find(r => !r._synthetic) || recoveryResponse.responses?.[0]
+            if (this.isSessionInvalid({ ...recoveryResponse, responses: [recoveryRealResponse] })) {
+              if (this.config.enableLogging) {
+                console.error("❌ Recovery session is also invalid - this should not happen!")
+              }
+              // Continue loop to retry again if we haven't exceeded maxRetries
+              continue
+            }
+
+            // Return the successful recovery response
             return recoveryResponse
           } else {
             if (this.config.enableLogging) {
@@ -564,7 +594,12 @@ export class InteractClient {
     const filteredCommandsInfo: { command: Command; originalIndex: number }[] = []
     const filteredCommands: Command[] = []
 
-    if (sessionId !== null && this.shouldSkipStartSession()) {
+    // Only filter startSession if we're using the existing internal session
+    // Don't filter if starting a new external session (different sessionId)
+    const shouldFilterStartSession =
+      sessionId !== null && this.shouldSkipStartSession() && sessionId === this.getSessionId()
+
+    if (shouldFilterStartSession) {
       commands.forEach((cmd, index) => {
         if (cmd.action === "startSession") {
           filteredCommandsInfo.push({ command: cmd, originalIndex: index })
@@ -782,7 +817,7 @@ export class InteractClient {
     options?: {
       sessionId?: string
       autoManageSession?: boolean
-      audience?: AudienceConfig
+      audience?: AudienceConfig | null
     },
   ): Promise<InteractResponse> {
     if (this.config.enableLogging) {
@@ -810,7 +845,8 @@ export class InteractClient {
     ]
 
     // Use provided audience or fall back to stored audience for session recovery
-    const recoveryAudience = audience || this.getStoredAudience()
+    // Filter out null and only use undefined if no audience provided
+    const recoveryAudience = audience !== null && audience !== undefined ? audience : this.getStoredAudience()
 
     if (this.config.enableLogging && !recoveryAudience) {
       console.warn("⚠️ getOffers: No recovery audience available - session recovery will fail if session is invalid")
@@ -828,7 +864,7 @@ export class InteractClient {
     options?: {
       sessionId?: string
       autoManageSession?: boolean
-      audience?: AudienceConfig
+      audience?: AudienceConfig | null
     },
   ): Promise<InteractResponse> {
     const { sessionId: explicitSessionId, autoManageSession = true, audience } = options || {}
@@ -860,7 +896,8 @@ export class InteractClient {
     ]
 
     // Use provided audience or fall back to stored audience for session recovery
-    const recoveryAudience = audience || this.getStoredAudience()
+    // Filter out null and only use undefined if no audience provided
+    const recoveryAudience = audience !== null && audience !== undefined ? audience : this.getStoredAudience()
     const batchResponse = await this.executeBatchWithRetry(sessionId, commands, recoveryAudience)
     return this.extractFirstResponse(batchResponse)
   }
