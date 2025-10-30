@@ -9,6 +9,16 @@
 5. **Terminal Usage**: Rather than opening a new terminal window all the time, re-use existing ones where possible. If the current terminal window as running npm run dev, open a new terminal window to run other commands and not kill the current window.
 6. **Over-complicated changes** - Avoid suggesting complex refactors or changes that are not directly related to the user's request or are an over-complication of the task at hand. Simple is often better.
 7. **Remove test code and logging** - if you create test code for logging, be sure to remove it when the task is complete
+8. **Git Commit Message Format**: Always use [Conventional Commits](https://www.conventionalcommits.org/) format for compatibility with release-please automation:
+   - Format: `<type>[optional scope]: <description>`
+   - Types: `feat:` (new feature), `fix:` (bug fix), `docs:` (documentation), `chore:` (maintenance), `refactor:` (code restructuring), `test:` (testing), `style:` (formatting), `perf:` (performance), `ci:` (CI/CD), `build:` (build system)
+   - Breaking changes: Add `BREAKING CHANGE:` in commit body or append `!` after type/scope
+   - Examples:
+     - `feat: add external session management support`
+     - `fix: preserve custom sessionId during recovery`
+     - `chore: remove node_modules from git tracking`
+     - `docs: update session management guide`
+     - `feat!: change session storage API (breaking change)`
 
 ---
 
