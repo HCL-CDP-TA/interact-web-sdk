@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.4](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.3...v2.7.4) (2025-10-30)
+
+
+### Bug Fixes
+
+* external session expiry & retry management ([eddc8bc](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/eddc8bc482498b7c7ad5b046876c4ea51d37ef41))
+
 ## [2.7.3](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.2...v2.7.3) (2025-10-10)
 
 
