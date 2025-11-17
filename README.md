@@ -874,6 +874,410 @@ The SDK has **zero runtime dependencies** - it only uses:
 - Standard JavaScript features (ES2020+)
 - TypeScript definitions for better development experience
 
+## Server-Side Usage (Node.js)
+
+The SDK is **fully compatible with server-side environments** including Node.js, serverless functions, and server-side rendering frameworks like Next.js.
+
+### Requirements
+
+- **Node.js 18+** (has native `fetch` API)
+- For Node.js <18, the SDK includes `node-fetch` polyfill
+
+### Quick Start (Server-Side)
+
+```typescript
+import { InteractClient, InteractAudience, InteractParam, InteractParamType } from "@hcl-cdp-ta/interact-sdk"
+
+// Initialize client for server-side usage
+const client = new InteractClient({
+  serverUrl: process.env.INTERACT_SERVER_URL || "https://your-interact-server.com/interact",
+  interactiveChannel: "server-api",
+  // persistSession automatically defaults to false in Node.js (no window object)
+})
+
+// Use with externally managed session IDs
+async function handleRequest(req, res) {
+  // Get session from your session store (Redis, database, etc.)
+  const sessionId = await getSessionFromStore(req.user.id)
+
+  // Define audience
+  const audience = InteractAudience.customer(
+    InteractParam.numeric("CustomerID", req.user.id)
+  )
+
+  // Get offers with external session ID
+  const offers = await client.getOffers("ProductPage", 3, {
+    sessionId: sessionId,
+    audience: audience,
+  })
+
+  res.json({ offers: offers.offerLists })
+}
+```
+
+### Session Management Strategies
+
+#### 1. External Session Management (Recommended for Server-Side)
+
+Manage session IDs externally using your preferred storage solution:
+
+```typescript
+// Example with Redis
+import { createClient } from 'redis'
+import { InteractClient } from '@hcl-cdp-ta/interact-sdk'
+
+const redisClient = createClient()
+await redisClient.connect()
+
+const interactClient = new InteractClient({
+  serverUrl: process.env.INTERACT_SERVER_URL,
+  persistSession: false, // Disable internal persistence
+})
+
+// Start session and store in Redis
+async function createUserSession(userId: string) {
+  const audience = InteractAudience.customer(
+    InteractParam.numeric("CustomerID", userId)
+  )
+
+  const response = await interactClient.startSession(audience)
+
+  // Store in Redis with 30-minute expiry
+  await redisClient.setEx(
+    `interact:session:${userId}`,
+    30 * 60,
+    response.sessionId
+  )
+
+  return response.sessionId
+}
+
+// Retrieve and use session
+async function getPersonalizedOffers(userId: string, interactionPoint: string) {
+  let sessionId = await redisClient.get(`interact:session:${userId}`)
+
+  if (!sessionId) {
+    // Create new session if not found
+    sessionId = await createUserSession(userId)
+  }
+
+  const audience = InteractAudience.customer(
+    InteractParam.numeric("CustomerID", userId)
+  )
+
+  const offers = await interactClient.getOffers(interactionPoint, 3, {
+    sessionId: sessionId,
+    audience: audience, // Required for auto-recovery if session expires
+  })
+
+  return offers.offerLists
+}
+```
+
+#### 2. Custom Session Store Interface
+
+Use the built-in `SessionStore` interface for seamless integration:
+
+```typescript
+import { InteractClient } from '@hcl-cdp-ta/interact-sdk'
+import type { SessionStore } from '@hcl-cdp-ta/interact-sdk/Types'
+import { createClient } from 'redis'
+
+// Create Redis-backed session store
+const redisClient = createClient()
+await redisClient.connect()
+
+const redisSessionStore: SessionStore = {
+  async get(key: string) {
+    return await redisClient.get(key)
+  },
+  async set(key: string, value: string) {
+    // Store with 30-minute expiry
+    await redisClient.setEx(key, 30 * 60, value)
+  },
+  async delete(key: string) {
+    await redisClient.del(key)
+  },
+}
+
+// Initialize client with custom session store
+const client = new InteractClient({
+  serverUrl: process.env.INTERACT_SERVER_URL,
+  sessionStore: redisSessionStore,
+  sessionStorageKey: 'interact-session', // Optional: custom key prefix
+})
+
+// Now session persistence works server-side!
+const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", "12345"))
+await client.startSession(audience)
+
+// Session automatically stored in Redis
+// Subsequent calls automatically use stored session
+const offers = await client.getOffers("HomePage", 3)
+```
+
+#### 3. Database-Backed Session Store
+
+```typescript
+import { SessionStore } from '@hcl-cdp-ta/interact-sdk/Types'
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
+
+const dbSessionStore: SessionStore = {
+  async get(key: string) {
+    const session = await prisma.interactSession.findUnique({
+      where: { key },
+    })
+
+    if (!session) return null
+
+    // Check expiry
+    if (session.expiresAt < new Date()) {
+      await prisma.interactSession.delete({ where: { key } })
+      return null
+    }
+
+    return session.data
+  },
+
+  async set(key: string, value: string) {
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
+
+    await prisma.interactSession.upsert({
+      where: { key },
+      update: { data: value, expiresAt },
+      create: { key, data: value, expiresAt },
+    })
+  },
+
+  async delete(key: string) {
+    await prisma.interactSession.delete({ where: { key } }).catch(() => {})
+  },
+}
+
+const client = new InteractClient({
+  serverUrl: process.env.INTERACT_SERVER_URL,
+  sessionStore: dbSessionStore,
+})
+```
+
+#### 4. In-Memory Session Store (Development/Testing)
+
+```typescript
+import { SessionStore } from '@hcl-cdp-ta/interact-sdk/Types'
+
+// Simple in-memory store for development
+const memoryStore = new Map<string, { value: string; expiresAt: number }>()
+
+const inMemorySessionStore: SessionStore = {
+  get(key: string) {
+    const item = memoryStore.get(key)
+    if (!item) return null
+
+    if (Date.now() > item.expiresAt) {
+      memoryStore.delete(key)
+      return null
+    }
+
+    return item.value
+  },
+
+  set(key: string, value: string) {
+    memoryStore.set(key, {
+      value,
+      expiresAt: Date.now() + 30 * 60 * 1000, // 30 minutes
+    })
+  },
+
+  delete(key: string) {
+    memoryStore.delete(key)
+  },
+}
+
+const client = new InteractClient({
+  serverUrl: process.env.INTERACT_SERVER_URL,
+  sessionStore: inMemorySessionStore,
+})
+```
+
+### Server-Side Rendering (SSR) Frameworks
+
+#### Next.js App Router Example
+
+```typescript
+// app/api/offers/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { InteractClient, InteractAudience, InteractParam } from '@hcl-cdp-ta/interact-sdk'
+import { getSessionFromCookie } from '@/lib/session'
+
+export async function GET(request: NextRequest) {
+  const client = new InteractClient({
+    serverUrl: process.env.INTERACT_SERVER_URL!,
+    persistSession: false, // No browser storage in API routes
+  })
+
+  // Get user session from cookies or auth
+  const userSession = await getSessionFromCookie(request)
+
+  const audience = InteractAudience.customer(
+    InteractParam.numeric("CustomerID", userSession.userId)
+  )
+
+  try {
+    const offers = await client.getOffers("HomePage", 3, {
+      audience: audience,
+      autoManageSession: true, // Auto-create session if needed
+    })
+
+    return NextResponse.json({ offers: offers.offerLists })
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to fetch offers' }, { status: 500 })
+  }
+}
+```
+
+**📁 Complete Next.js Example**: See [`nextjs-example/`](../nextjs-example/) for a full working Next.js App Router implementation with:
+- Server-side session management (cookies)
+- Server-side offer fetching (RSC)
+- Client-side event tracking (contact, accept, reject)
+- Production-ready patterns
+
+Quick start:
+```bash
+cd nextjs-example
+npm install
+npm run dev
+```#### Express.js Example
+
+```typescript
+import express from 'express'
+import { InteractClient, InteractAudience, InteractParam } from '@hcl-cdp-ta/interact-sdk'
+
+const app = express()
+const client = new InteractClient({
+  serverUrl: process.env.INTERACT_SERVER_URL,
+  persistSession: false,
+})
+
+app.get('/api/offers/:interactionPoint', async (req, res) => {
+  const { userId } = req.session // From express-session
+  const { interactionPoint } = req.params
+
+  const audience = InteractAudience.customer(
+    InteractParam.numeric("CustomerID", userId)
+  )
+
+  try {
+    // Use session from request session store
+    let sessionId = req.session.interactSessionId
+
+    if (!sessionId) {
+      const sessionResponse = await client.startSession(audience)
+      sessionId = sessionResponse.sessionId
+      req.session.interactSessionId = sessionId
+    }
+
+    const offers = await client.getOffers(interactionPoint, 3, {
+      sessionId: sessionId,
+      audience: audience,
+    })
+
+    res.json({ offers: offers.offerLists })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch offers' })
+  }
+})
+```
+
+### Serverless Functions
+
+```typescript
+// AWS Lambda / Vercel / Netlify Functions
+import { InteractClient, InteractAudience, InteractParam } from '@hcl-cdp-ta/interact-sdk'
+
+export async function handler(event, context) {
+  const client = new InteractClient({
+    serverUrl: process.env.INTERACT_SERVER_URL,
+    persistSession: false, // Stateless functions
+  })
+
+  const userId = event.requestContext.authorizer.claims.sub
+  const audience = InteractAudience.customer(
+    InteractParam.string("CustomerID", userId)
+  )
+
+  // Each invocation creates its own session (stateless)
+  const sessionResponse = await client.startSession(audience)
+  const offers = await client.getOffers("MobileApp", 5, {
+    sessionId: sessionResponse.sessionId,
+  })
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ offers: offers.offerLists }),
+  }
+}
+```
+
+### Key Differences: Browser vs Server
+
+| Feature | Browser | Server (Node.js) |
+|---------|---------|------------------|
+| **Session Persistence** | Automatic via `sessionStorage` | Manual via `sessionStore` or external management |
+| **Default `persistSession`** | `true` | `false` (auto-detected) |
+| **Session Storage** | `window.sessionStorage` | Redis, Database, or custom store |
+| **Environment Detection** | Automatic | Automatic (checks for `window` object) |
+| **Session ID Management** | Internal | External (recommended) or custom `SessionStore` |
+| **Use Case** | Single user, browser-based | Multi-user, stateless, distributed |
+
+### Best Practices for Server-Side
+
+1. **Use External Session Management**: Store session IDs in Redis, database, or session middleware
+2. **Always Provide Audience**: Include `audience` parameter for automatic session recovery
+3. **Set `persistSession: false`**: Explicitly disable if not using custom `sessionStore`
+4. **Handle Session Expiry**: Implement retry logic or use SDK's auto-recovery with `audience`
+5. **Use Environment Variables**: Store `serverUrl` and credentials securely
+6. **Monitor Performance**: Track session creation and API response times
+7. **Implement Caching**: Cache offers when appropriate for your use case
+
+### Complete Server-Side Examples
+
+See [`demo-server-usage.ts`](../demo-server-usage.ts) for comprehensive examples including:
+
+- External session management (manual)
+- Custom SessionStore interface implementation
+- Redis-like session store (production pattern)
+- Express.js integration
+- Next.js API route pattern
+- Serverless function pattern (AWS Lambda, Vercel, Netlify)
+- Database-backed session store
+
+### Environment Detection
+
+The SDK automatically detects server environments:
+
+```typescript
+// Browser environment
+const browserClient = new InteractClient({
+  serverUrl: "...",
+  // persistSession defaults to true (uses sessionStorage)
+})
+
+// Server environment (no window object)
+const serverClient = new InteractClient({
+  serverUrl: "...",
+  // persistSession defaults to false (no sessionStorage available)
+})
+
+// Explicit control (works in both environments)
+const explicitClient = new InteractClient({
+  serverUrl: "...",
+  persistSession: false, // Always disable
+  sessionStore: myCustomStore, // Or provide custom store
+})
+```
+
 ## React Integration Examples
 
 The demo application (`interact-sdk-test/`) showcases production-ready React integration including:
@@ -1169,4 +1573,48 @@ try {
 - **Integration Examples**: Complete demo application with source code
 - **Component Library**: React components in `interact-sdk-test/components/`
 - **Performance Monitoring**: ResponseMetrics component for real-time tracking
+- **Server-Side Examples**: See `demo-server-usage.ts` for 7 comprehensive server patterns
+- **Testing**: See `TESTING.md` for running tests and validation
+
+## Testing
+
+### Automated Tests
+
+Run the server-side functionality tests:
+
+```bash
+# Install tsx if needed
+npm install -D tsx
+
+# Run tests
+npm run test:server
+
+# Or directly
+npx tsx test-server-side.ts
+```
+
+The test suite covers:
+- Environment auto-detection
+- Custom SessionStore implementations
+- Async session operations
+- External session management
+- Session expiry handling
+- Multi-client isolation
+
+See [`TESTING.md`](../TESTING.md) for detailed testing documentation.
+
+### Interactive Examples
+
+Run the server-side demo with working examples:
+
+```bash
+npx tsx demo-server-usage.ts
+```
+
+**Note**: Examples require a real Interact server to fully function. Set your server URL:
+
+```bash
+export INTERACT_SERVER_URL="https://your-server.com/interact"
+npx tsx demo-server-usage.ts
+```
 ````

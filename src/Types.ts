@@ -4,6 +4,13 @@ export interface ApiConfig {
   defaultHeaders?: Record<string, string>
 }
 
+// Session storage interface for server-side or custom storage implementations
+export interface SessionStore {
+  get(key: string): Promise<string | null> | string | null
+  set(key: string, value: string): Promise<void> | void
+  delete(key: string): Promise<void> | void
+}
+
 // Core Types from OpenAPI Schema
 export interface ParameterVO {
   n: string

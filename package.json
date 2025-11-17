@@ -1,7 +1,7 @@
 {
   "name": "@hcl-cdp-ta/interact-sdk",
   "version": "2.7.4",
-  "description": "HCL Interact SDK",
+  "description": "HCL Interact SDK - Universal TypeScript SDK for browser and Node.js environments",
   "license": "ISC",
   "author": "Simon Pallister",
   "main": "./dist/index.js",
@@ -9,12 +9,40 @@
   "browser": "./dist/index.global.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./Types": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
     "dist"
   ],
   "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "hcl",
+    "interact",
+    "personalization",
+    "offers",
+    "marketing",
+    "customer-data-platform",
+    "cdp",
+    "real-time",
+    "server-side",
+    "browser",
+    "universal",
+    "typescript"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs,iife --dts",
     "dev": "tsup src/index.ts --format esm,cjs,iife --dts --watch"

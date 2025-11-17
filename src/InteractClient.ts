@@ -2,6 +2,7 @@
 // Clean, opinionated TypeScript client with React integration
 
 import InteractApiError from "./InteractError"
+import type { SessionStore } from "./Types"
 
 // Enums for type safety
 export enum InteractParamType {
@@ -83,9 +84,10 @@ export interface InteractConfig {
   username?: string
   password?: string
   enableLogging?: boolean
-  persistSession?: boolean // Enable session persistence across page refreshes (default: true)
+  persistSession?: boolean // Enable session persistence across page refreshes (default: true in browser, false in Node.js)
   sessionStorageKey?: string // Key for sessionStorage (default: "interact-session")
   sessionExpiryMinutes?: number // Minutes until persisted session expires (default: 30)
+  sessionStore?: SessionStore // Optional custom session store for server-side or custom storage (Redis, DB, etc.)
 }
 
 export interface AudienceConfig {
@@ -182,16 +184,22 @@ export class InteractClient {
   }
 
   constructor(config: InteractConfig) {
+    // Auto-detect environment: default to true in browser, false in Node.js
+    const isServerEnvironment = typeof window === "undefined"
+    const defaultPersistSession = config.sessionStore ? true : !isServerEnvironment
+
     this.config = {
       ...config,
       interactiveChannel: config.interactiveChannel || "_RealTimePersonalization_",
-      persistSession: config.persistSession !== false, // Default to true
+      persistSession: config.persistSession !== undefined ? config.persistSession : defaultPersistSession,
       sessionStorageKey: config.sessionStorageKey || "interact-session",
       sessionExpiryMinutes: config.sessionExpiryMinutes || 30, // Default to 30 minutes
     }
 
-    // Load persisted session on initialization
-    this.loadPersistedSession()
+    // Load persisted session on initialization (async operations handled internally)
+    this.loadPersistedSession().catch(err => {
+      console.warn("Failed to load persisted session during initialization:", err)
+    })
   }
 
   // Session persistence methods
@@ -199,8 +207,8 @@ export class InteractClient {
     return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined"
   }
 
-  private saveSessionToStorage(): void {
-    if (!this.config.persistSession || !this.isBrowser()) return
+  private async saveSessionToStorage(): Promise<void> {
+    if (!this.config.persistSession) return
 
     try {
       const sessionData = {
@@ -209,17 +217,32 @@ export class InteractClient {
         lastActivity: this.sessionState.lastActivity.toISOString(),
         interactiveChannel: this.config.interactiveChannel,
       }
-      window.sessionStorage.setItem(this.config.sessionStorageKey!, JSON.stringify(sessionData))
+      const serialized = JSON.stringify(sessionData)
+
+      // Use custom session store if provided
+      if (this.config.sessionStore) {
+        await this.config.sessionStore.set(this.config.sessionStorageKey!, serialized)
+      } else if (this.isBrowser()) {
+        window.sessionStorage.setItem(this.config.sessionStorageKey!, serialized)
+      }
     } catch (error) {
       console.warn("Failed to save session to storage:", error)
     }
   }
 
-  private loadPersistedSession(): void {
-    if (!this.config.persistSession || !this.isBrowser()) return
+  private async loadPersistedSession(): Promise<void> {
+    if (!this.config.persistSession) return
 
     try {
-      const stored = window.sessionStorage.getItem(this.config.sessionStorageKey!)
+      let stored: string | null = null
+
+      // Use custom session store if provided
+      if (this.config.sessionStore) {
+        stored = await this.config.sessionStore.get(this.config.sessionStorageKey!)
+      } else if (this.isBrowser()) {
+        stored = window.sessionStorage.getItem(this.config.sessionStorageKey!)
+      }
+
       if (stored) {
         const sessionData = JSON.parse(stored)
 
@@ -241,11 +264,16 @@ export class InteractClient {
     }
   }
 
-  private clearPersistedSession(): void {
-    if (!this.config.persistSession || !this.isBrowser()) return
+  private async clearPersistedSession(): Promise<void> {
+    if (!this.config.persistSession) return
 
     try {
-      window.sessionStorage.removeItem(this.config.sessionStorageKey!)
+      // Use custom session store if provided
+      if (this.config.sessionStore) {
+        await this.config.sessionStore.delete(this.config.sessionStorageKey!)
+      } else if (this.isBrowser()) {
+        window.sessionStorage.removeItem(this.config.sessionStorageKey!)
+      }
     } catch (error) {
       console.warn("Failed to clear persisted session:", error)
     }
