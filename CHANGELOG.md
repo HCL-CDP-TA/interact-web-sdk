@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.4...v2.8.0) (2025-11-17)
+
+
+### Features
+
+* added server-side capability ([5e0d1c6](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/5e0d1c668d8c514eb6734e4f01fa3057b578be51))
+* added wrapper functions for contact, accept & reject ([ffa197b](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/ffa197ba7a51b61688301af5eb75b2b46be2714e))
+
 ## [2.7.4](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.3...v2.7.4) (2025-10-30)
 
 
