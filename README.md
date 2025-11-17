@@ -960,22 +960,17 @@ async function handleRequest(req, res) {
 
 #### 1. External Session Management (Recommended for Server-Side)
 
-Manage session IDs externally using your preferred storage solution:
+Manage session IDs externally - store them however you want:
 
 ```typescript
-// Example with Redis
-import { createClient } from 'redis'
 import { InteractClient } from '@hcl-cdp-ta/interact-sdk'
-
-const redisClient = createClient()
-await redisClient.connect()
 
 const interactClient = new InteractClient({
   serverUrl: process.env.INTERACT_SERVER_URL,
   persistSession: false, // Disable internal persistence
 })
 
-// Start session and store in Redis
+// Start session and store however you want (cookies, database, etc.)
 async function createUserSession(userId: string) {
   const audience = InteractAudience.customer(
     InteractParam.numeric("CustomerID", userId)
@@ -983,24 +978,20 @@ async function createUserSession(userId: string) {
 
   const response = await interactClient.startSession(audience)
 
-  // Store in Redis with 30-minute expiry
-  await redisClient.setEx(
-    `interact:session:${userId}`,
-    30 * 60,
-    response.sessionId
-  )
+  // Store session ID in your preferred storage:
+  // - HTTP cookies (Next.js example uses this)
+  // - Database
+  // - Redis/Memcached
+  // - In-memory cache
+  // - Your session management system
 
   return response.sessionId
 }
 
-// Retrieve and use session
+// Use the stored session
 async function getPersonalizedOffers(userId: string, interactionPoint: string) {
-  let sessionId = await redisClient.get(`interact:session:${userId}`)
-
-  if (!sessionId) {
-    // Create new session if not found
-    sessionId = await createUserSession(userId)
-  }
+  // Get session from your storage
+  const sessionId = await getStoredSession(userId)
 
   const audience = InteractAudience.customer(
     InteractParam.numeric("CustomerID", userId)
@@ -1015,49 +1006,47 @@ async function getPersonalizedOffers(userId: string, interactionPoint: string) {
 }
 ```
 
-#### 2. Custom Session Store Interface
+**📁 See the Next.js Example**: The `nextjs-example/` folder shows a complete implementation using HTTP-only cookies - no Redis or database required!
 
-Use the built-in `SessionStore` interface for seamless integration:
+#### 2. Custom Session Store Interface (Optional)
+
+For advanced scenarios, implement the `SessionStore` interface to integrate with any storage system:
 
 ```typescript
 import { InteractClient } from '@hcl-cdp-ta/interact-sdk'
 import type { SessionStore } from '@hcl-cdp-ta/interact-sdk/Types'
-import { createClient } from 'redis'
 
-// Create Redis-backed session store
-const redisClient = createClient()
-await redisClient.connect()
-
-const redisSessionStore: SessionStore = {
+// Example: Custom session store (could be Redis, database, etc.)
+const customSessionStore: SessionStore = {
   async get(key: string) {
-    return await redisClient.get(key)
+    // Implement your storage retrieval logic
+    return await yourStorageSystem.get(key)
   },
   async set(key: string, value: string) {
-    // Store with 30-minute expiry
-    await redisClient.setEx(key, 30 * 60, value)
+    // Implement your storage logic
+    await yourStorageSystem.set(key, value, { ttl: 30 * 60 })
   },
   async delete(key: string) {
-    await redisClient.del(key)
+    // Implement your deletion logic
+    await yourStorageSystem.delete(key)
   },
 }
 
 // Initialize client with custom session store
 const client = new InteractClient({
   serverUrl: process.env.INTERACT_SERVER_URL,
-  sessionStore: redisSessionStore,
-  sessionStorageKey: 'interact-session', // Optional: custom key prefix
+  sessionStore: customSessionStore,
 })
 
-// Now session persistence works server-side!
+// Now session persistence works with your custom storage!
 const audience = InteractAudience.customer(InteractParam.numeric("CustomerID", "12345"))
 await client.startSession(audience)
 
-// Session automatically stored in Redis
-// Subsequent calls automatically use stored session
+// Session automatically stored in your custom store
 const offers = await client.getOffers("HomePage", 3)
 ```
 
-#### 3. Database-Backed Session Store
+#### 3. In-Memory Session Store (Development/Testing)
 
 ```typescript
 import { SessionStore } from '@hcl-cdp-ta/interact-sdk/Types'
@@ -1068,42 +1057,7 @@ const prisma = new PrismaClient()
 const dbSessionStore: SessionStore = {
   async get(key: string) {
     const session = await prisma.interactSession.findUnique({
-      where: { key },
-    })
-
-    if (!session) return null
-
-    // Check expiry
-    if (session.expiresAt < new Date()) {
-      await prisma.interactSession.delete({ where: { key } })
-      return null
-    }
-
-    return session.data
-  },
-
-  async set(key: string, value: string) {
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
-
-    await prisma.interactSession.upsert({
-      where: { key },
-      update: { data: value, expiresAt },
-      create: { key, data: value, expiresAt },
-    })
-  },
-
-  async delete(key: string) {
-    await prisma.interactSession.delete({ where: { key } }).catch(() => {})
-  },
-}
-
-const client = new InteractClient({
-  serverUrl: process.env.INTERACT_SERVER_URL,
-  sessionStore: dbSessionStore,
-})
-```
-
-#### 4. In-Memory Session Store (Development/Testing)
+#### 3. In-Memory Session Store (Development/Testing)
 
 ```typescript
 import { SessionStore } from '@hcl-cdp-ta/interact-sdk/Types'
@@ -1141,6 +1095,8 @@ const client = new InteractClient({
   sessionStore: inMemorySessionStore,
 })
 ```
+
+**Note**: For production examples with Redis, database, or other storage systems, see `demo-server-usage.ts`.
 
 ### Server-Side Rendering (SSR) Frameworks
 
