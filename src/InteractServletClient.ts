@@ -172,6 +172,27 @@ export class InteractServletClient {
     return this.extractFirstResponse(batchResponse)
   }
 
+  // Convenience wrapper for tracking offer contact events
+  async trackContact(sessionId: string, treatmentCode: string): Promise<ServletResponse> {
+    return this.postEvent(sessionId, "Contact", [
+      InteractServletClient.createParameter("UACIOfferTrackingCode", treatmentCode, "string"),
+    ])
+  }
+
+  // Convenience wrapper for tracking offer accept events
+  async trackAccept(sessionId: string, treatmentCode: string): Promise<ServletResponse> {
+    return this.postEvent(sessionId, "Accept", [
+      InteractServletClient.createParameter("UACIOfferTrackingCode", treatmentCode, "string"),
+    ])
+  }
+
+  // Convenience wrapper for tracking offer reject events
+  async trackReject(sessionId: string, treatmentCode: string): Promise<ServletResponse> {
+    return this.postEvent(sessionId, "Reject", [
+      InteractServletClient.createParameter("UACIOfferTrackingCode", treatmentCode, "string"),
+    ])
+  }
+
   // Command builders that match the original CommandUtil
   private createGetVersionCmd(): Command {
     return { action: "getVersion" }

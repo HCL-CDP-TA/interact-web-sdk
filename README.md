@@ -288,6 +288,47 @@ Efficient batch operations for complex workflows and performance optimization.
   - `options.autoManageSession` - Auto-manage session if no sessionId provided (default: true)
   - `options.audience` - Audience for auto session creation
 
+#### Offer Tracking Convenience Methods
+
+Simplified wrapper methods for common offer tracking events:
+
+- `trackContact(treatmentCode, options?)` - Track when an offer is displayed/contacted
+
+  - `treatmentCode` - The offer's treatment code (from `offer.treatmentCode`)
+  - `options` - Same options as `postEvent()` (sessionId, autoManageSession, audience)
+
+- `trackAccept(treatmentCode, options?)` - Track when a user accepts an offer
+
+  - `treatmentCode` - The offer's treatment code
+  - `options` - Same options as `postEvent()`
+
+- `trackReject(treatmentCode, options?)` - Track when a user rejects/dismisses an offer
+  - `treatmentCode` - The offer's treatment code
+  - `options` - Same options as `postEvent()`
+
+**Example Usage:**
+
+```typescript
+// Before: Manual postEvent calls
+await client.postEvent(
+  "Contact",
+  [InteractClient.createParameter("UACIOfferTrackingCode", offer.treatmentCode, InteractParamType.String)],
+  { sessionId: getUserSessionId(), autoManageSession: true },
+)
+
+// After: Simple convenience methods
+await client.trackContact(offer.treatmentCode, {
+  sessionId: getUserSessionId(),
+  autoManageSession: true,
+})
+
+// Even simpler with automatic session management
+await client.startSession(audience) // Once at app startup
+await client.trackContact(offer.treatmentCode) // Uses stored session automatically
+await client.trackAccept(offer.treatmentCode)
+await client.trackReject(offer.treatmentCode)
+```
+
 ### Batch Operations
 
 #### Traditional Batch API

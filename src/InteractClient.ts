@@ -930,6 +930,54 @@ export class InteractClient {
     return this.extractFirstResponse(batchResponse)
   }
 
+  // Convenience wrapper for tracking offer contact events
+  async trackContact(
+    treatmentCode: string,
+    options?: {
+      sessionId?: string
+      autoManageSession?: boolean
+      audience?: AudienceConfig | null
+    },
+  ): Promise<InteractResponse> {
+    return this.postEvent(
+      "Contact",
+      [InteractClient.createParameter("UACIOfferTrackingCode", treatmentCode, InteractParamType.String)],
+      options,
+    )
+  }
+
+  // Convenience wrapper for tracking offer accept events
+  async trackAccept(
+    treatmentCode: string,
+    options?: {
+      sessionId?: string
+      autoManageSession?: boolean
+      audience?: AudienceConfig | null
+    },
+  ): Promise<InteractResponse> {
+    return this.postEvent(
+      "Accept",
+      [InteractClient.createParameter("UACIOfferTrackingCode", treatmentCode, InteractParamType.String)],
+      options,
+    )
+  }
+
+  // Convenience wrapper for tracking offer reject events
+  async trackReject(
+    treatmentCode: string,
+    options?: {
+      sessionId?: string
+      autoManageSession?: boolean
+      audience?: AudienceConfig | null
+    },
+  ): Promise<InteractResponse> {
+    return this.postEvent(
+      "Reject",
+      [InteractClient.createParameter("UACIOfferTrackingCode", treatmentCode, InteractParamType.String)],
+      options,
+    )
+  }
+
   async getVersion(): Promise<InteractResponse> {
     const commands: Command[] = [
       {
