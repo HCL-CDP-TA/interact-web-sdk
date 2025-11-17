@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.8.0...v2.8.1) (2025-11-17)
+
+
+### Bug Fixes
+
+* update readme4 to remove redis recommendation ([585a2e3](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/585a2e30b46e6c5a8028f6a218179551b224de30))
+
 ## [2.8.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.4...v2.8.0) (2025-11-17)
 
 
