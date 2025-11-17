@@ -1,6 +1,6 @@
 {
   "name": "@hcl-cdp-ta/interact-sdk",
-  "version": "2.7.4",
+  "version": "2.8.0",
   "description": "HCL Interact SDK - Universal TypeScript SDK for browser and Node.js environments",
   "license": "ISC",
   "author": "Simon Pallister",
