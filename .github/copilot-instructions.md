@@ -257,15 +257,13 @@ if (hasValidSession && hasStartSessionCommand) {
 
 **Runtime**:
 
-- `node-fetch` (for Node.js environments without native fetch)
+- None - Uses native `fetch` API (Node.js 18+ and all modern browsers)
 
 **Dev Dependencies**:
 
 - TypeScript 5.7.3
 - tsup 8.3.6
 - terser (minification)
-
-**No Runtime Dependencies in Browser** - Uses native `fetch` API
 
 ### Testing & Examples
 

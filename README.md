@@ -921,8 +921,7 @@ The SDK is **fully compatible with server-side environments** including Node.js,
 
 ### Requirements
 
-- **Node.js 18+** (has native `fetch` API)
-- For Node.js <18, the SDK includes `node-fetch` polyfill
+- **Node.js 18+** (native `fetch` API required)
 
 ### Quick Start (Server-Side)
 
