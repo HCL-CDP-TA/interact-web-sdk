@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.8.1](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.8.0...v2.8.1) (2026-01-02)
+
+
+### Bug Fixes
+
+* remove node-fetch dependency to use native fetch ([bc1eef2](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/bc1eef2968ee435ca3b2069700f5463d34896d6d))
+* update readme4 to remove redis recommendation ([585a2e3](https://github.com/HCL-CDP-TA/interact-web-sdk/commit/585a2e30b46e6c5a8028f6a218179551b224de30))
+
 ## [2.8.0](https://github.com/HCL-CDP-TA/interact-web-sdk/compare/v2.7.4...v2.8.0) (2025-11-17)
 
 
